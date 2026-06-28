@@ -1,0 +1,16 @@
+# Credentials — never commit a PAT
+.ado_pat
+*.pat
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Local presentation — not part of the package
+presentation.html

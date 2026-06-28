@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ado-board-sync"
+version = "0.1.0"
+description = "Drive an Azure DevOps board (Epics, Issues, Tasks) from a Markdown backlog."
+readme = "README.md"
+requires-python = ">=3.8"
+license = { text = "MIT" }
+keywords = ["azure-devops", "backlog", "work-items", "markdown", "cli"]
+dependencies = []
+
+[project.scripts]
+ado-board-sync = "ado_board_sync.cli:main"
+
+[project.urls]
+Repository = "https://github.com/okyeboah/ado-board-sync"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ado_board_sync"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src",
+  "tests",
+  "board.config.example.json",
+  "board.config.schema.json",
+  "README.md",
+]
+
+[tool.pyrefly]
+project_includes = ["src", "tests"]
+search_path = ["src", "."]
+
