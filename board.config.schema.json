@@ -1,0 +1,125 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ado-board-sync project configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["org", "project", "code_prefix"],
+  "properties": {
+    "org": {
+      "type": "string",
+      "description": "Azure DevOps organisation name."
+    },
+    "project": {
+      "type": "string",
+      "description": "Azure DevOps project name."
+    },
+    "code_prefix": {
+      "type": "string",
+      "description": "Issue code prefix, e.g. 'PROJ' matches 'PROJ-101'.",
+      "pattern": "^[A-Za-z][A-Za-z0-9]*$"
+    },
+    "board_file": {
+      "type": "string",
+      "description": "Backlog Markdown path, relative to this config file.",
+      "default": "docs/backlog.md"
+    },
+    "csv_file": {
+      "type": "string",
+      "description": "Intermediate import CSV path, relative to this config file.",
+      "default": "build/work-items.csv"
+    },
+    "types": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Work-item type names for the three backlog levels.",
+      "properties": {
+        "epic": { "type": "string", "default": "Epic" },
+        "story": { "type": "string", "default": "Issue" },
+        "task": { "type": "string", "default": "Task" }
+      }
+    },
+    "states": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Workflow state names. 'done' is the terminal state close-children cascades onto child Tasks (Basic: 'Done'; Agile/CMMI: 'Closed'/'Resolved').",
+      "properties": {
+        "done": { "type": "string", "default": "Done" }
+      }
+    },
+    "epic_heading_regex": {
+      "type": "string",
+      "description": "Regex matching an Epic heading on the stripped line; capture group 1 is the title.",
+      "default": "^##\\s+(Epic\\b.*)$"
+    },
+    "stop_headings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Line prefixes that mark the end of the backlog body.",
+      "default": []
+    },
+    "api_version": {
+      "type": "string",
+      "description": "Azure DevOps REST API version.",
+      "default": "7.1"
+    },
+    "pat_env": {
+      "type": "string",
+      "description": "Environment variable the Personal Access Token is read from.",
+      "default": "AZURE_DEVOPS_PAT"
+    },
+    "pat_file": {
+      "type": "string",
+      "description": "Token file checked if the env var is unset. Must be gitignored.",
+      "default": ".ado_pat"
+    },
+    "task_title_max": {
+      "type": "integer",
+      "description": "Maximum Task title length; bullets are truncated to this.",
+      "minimum": 1,
+      "default": 250
+    },
+    "max_retries": {
+      "type": "integer",
+      "description": "Maximum number of retries for idempotent requests.",
+      "minimum": 0,
+      "default": 0
+    },
+    "backoff": {
+      "type": "number",
+      "description": "Base backoff time in seconds.",
+      "minimum": 0.0,
+      "default": 1.5
+    },
+    "timeout": {
+      "type": "integer",
+      "description": "HTTP request timeout in seconds.",
+      "minimum": 1,
+      "default": 20
+    },
+    "team": {
+      "type": ["string", "null"],
+      "description": "Team whose sprint view the iterations are added to. Null auto-detects the '<Project> Team' default.",
+      "default": null
+    },
+    "iterations": {
+      "type": "array",
+      "description": "Sprints for the 'sprints' command. Each entry creates an iteration node and assigns the listed Issue codes (+ their child Tasks) to it.",
+      "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name"],
+        "properties": {
+          "name": { "type": "string", "description": "Iteration node name, e.g. 'Sprint 1'." },
+          "start": { "type": "string", "description": "Start date YYYY-MM-DD (optional)." },
+          "finish": { "type": "string", "description": "Finish date YYYY-MM-DD (optional)." },
+          "items": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "Issue codes assigned to this sprint, e.g. ['PROJ-101']. If a code is listed in two sprints the earliest wins."
+          }
+        }
+      }
+    }
+  }
+}

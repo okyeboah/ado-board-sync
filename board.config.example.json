@@ -1,0 +1,29 @@
+{
+  "org": "your-organisation",
+  "project": "YourProject",
+  "code_prefix": "PROJ",
+  "board_file": "docs/backlog.md",
+  "csv_file": "build/work-items.csv",
+  "types": {
+    "epic": "Epic",
+    "story": "Issue",
+    "task": "Task"
+  },
+  "states": {
+    "done": "Done"
+  },
+  "epic_heading_regex": "^##\\s+(Epic\\b.*)$",
+  "stop_headings": [],
+  "api_version": "7.1",
+  "pat_env": "AZURE_DEVOPS_PAT",
+  "pat_file": ".ado_pat",
+  "task_title_max": 250,
+  "team": null,
+  "max_retries": 0,
+  "backoff": 1.5,
+  "timeout": 20,
+  "iterations": [
+    { "name": "Sprint 1", "start": "2026-06-29", "finish": "2026-07-10", "items": ["PROJ-101", "PROJ-102"] },
+    { "name": "Sprint 2", "start": "2026-07-13", "finish": "2026-07-24", "items": ["PROJ-201"] }
+  ]
+}
