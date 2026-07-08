@@ -1,17 +1,18 @@
 # ado-board-sync
 
 Drive an **Azure DevOps** board (Epics → Issues/Stories → Tasks) from a Markdown
-backlog, so a single document is the source of truth and the board is reconciled
-to it on demand.
+backlog. You keep one document up to date; running the tool reconciles the board
+to match it.
 
-- **Zero dependencies** — Python 3.8+ standard library only.
-- **Credential-safe** — the PAT is read from an environment variable or a
-  gitignored token file; it is never written to the config, logs, or CSV.
-- **Dry-run by default** — every mutating command previews its plan and only
-  applies changes with `--go`.
-- **Process-agnostic** — hierarchy is built from `System.LinkTypes.Hierarchy`
-  relations, so only the type *names* in `types` change between Basic / Agile /
-  Scrum templates.
+- **Zero dependencies.** Python 3.8+ standard library, nothing to install.
+- **The PAT never touches the repo.** It's read from an environment variable or
+  a gitignored token file at run time, and never written to the config, the
+  logs, or the CSV.
+- **Dry-run by default.** Anything that would change the board prints its plan
+  first and only writes when you add `--go`.
+- **Not tied to one process template.** Hierarchy comes from
+  `System.LinkTypes.Hierarchy` links, so moving between Basic, Agile, and Scrum
+  only means changing the type *names* in `types`.
 
 ## Install
 
