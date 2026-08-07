@@ -14,3 +14,21 @@ dist/
 
 # Local presentation — not part of the package
 presentation.html
+
+# Ruflo local secrets and runtime data
+.env
+.env.local
+.env.*.local
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/sessions/
+
+# ruflo / claude-flow artefacts (added 2026-08-02)
+.claude/
+.claude-flow/
+.swarm/
+.agents/
+.mcp.json
+ruvector.db
+CLAUDE.md
+uv.lock
