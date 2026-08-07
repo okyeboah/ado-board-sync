@@ -3,7 +3,7 @@ import argparse
 import sys
 
 from . import client as client_mod
-from . import commands, config
+from . import commands, config, parser
 
 
 def _build_parser():
@@ -36,6 +36,7 @@ def _build_parser():
         help="also copy the Issue's assignee onto each closed Task that is currently unassigned",
     )
     add("dedup", "Delete duplicate work items", go=True)
+    add("check-html", "Read-only, offline: verify every description converts to valid HTML")
     add("audit", "Read-only: verify the board matches the backlog (exit 1 on drift)")
     add("sync", "gen-csv -> import -> resync -> resync-tasks -> audit", go=True)
 
@@ -69,8 +70,11 @@ def main(argv=None):
     args = _build_parser().parse_args(argv)
     cfg = config.load(args.config)
 
+    # Commands that read the backlog only; they need no PAT and no network.
     if args.cmd == "gen-csv":
         return commands.gen_csv(cfg, args)
+    if args.cmd == "check-html":
+        return commands.check_html(cfg, args)
 
     pat = cfg.resolve_pat()
     if not pat:
@@ -97,7 +101,14 @@ def main(argv=None):
     if args.cmd == "audit":
         return commands.audit(cfg, client, args)
     if args.cmd == "sync":
-        commands.gen_csv(cfg, args)
+        items = parser.parse_board(cfg)
+        commands.gen_csv(cfg, args, items=items)
+        # Validate the markup before anything writes a description. `audit`
+        # cannot catch this afterwards: it compares tag-stripped text, so a
+        # description that is malformed on both sides compares equal.
+        if commands.check_html(cfg, args, items=items):
+            print("\nAborted: fix the description markup before writing to the board.")
+            return 1
         commands.import_items(cfg, client, args)
         commands.resync(cfg, client, args)
         commands.resync_tasks(cfg, client, args)

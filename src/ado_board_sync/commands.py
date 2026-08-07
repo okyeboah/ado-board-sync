@@ -12,8 +12,8 @@ from . import csvio, htmlfmt, parser
 # --------------------------------------------------------------------------- #
 # gen-csv: backlog Markdown -> import CSV
 # --------------------------------------------------------------------------- #
-def gen_csv(cfg, args=None):
-    items = parser.parse_board(cfg)
+def gen_csv(cfg, args=None, items=None):
+    items = items if items is not None else parser.parse_board(cfg)
     rows = csvio.rows_from_board(items, cfg)
     csvio.write_rows(rows, cfg.csv_file)
     n_epics = sum(1 for r in rows if r["Title 1"])
@@ -313,78 +313,122 @@ def _assignee_value(field):
     return field
 
 
+def _hierarchy(cfg, client):
+    """Every Epic/Issue/Task on the board, with its state, parent, and assignee."""
+    types = "','".join([cfg.types["epic"], cfg.types["story"], cfg.types["task"]])
+    ids = client.wiql(
+        f"[System.TeamProject]='{cfg.project}' "
+        f"AND [System.WorkItemType] IN ('{types}')"
+    )
+    fields = [
+        "System.Id", "System.Title", "System.State",
+        "System.WorkItemType", "System.Parent", "System.AssignedTo",
+    ]
+    rec = {}
+    for w in client.get_items(ids, fields):
+        f = w["fields"]
+        rec[w["id"]] = {
+            "title": f.get("System.Title", ""),
+            "state": f.get("System.State", ""),
+            "type": f["System.WorkItemType"],
+            "parent": f.get("System.Parent"),
+            "assignee": f.get("System.AssignedTo"),
+        }
+    kids = {}
+    for wid, r in rec.items():
+        if r["parent"] in rec:
+            kids.setdefault(r["parent"], []).append(wid)
+    return rec, kids
+
+
+def _nearest_done_ancestor(rec, wid, done):
+    """The closest ancestor already marked done, or None."""
+    parent = rec[wid]["parent"]
+    while parent in rec:
+        if rec[parent]["state"] == done:
+            return parent
+        parent = rec[parent]["parent"]
+    return None
+
+
+def state_drift(cfg, client):
+    """Return the two ways a board's states can disagree with its hierarchy.
+
+    ``downward`` maps each open item to the nearest ancestor already done —
+    Azure DevOps never cascades state, so closing an Epic silently leaves its
+    Issues and Tasks open. ``upward`` lists parents whose children are all done
+    while the parent is not; that one is a judgement call, not a defect, because
+    a parent can hold review or sign-off work of its own.
+    """
+    done = cfg.states["done"]
+    rec, kids = _hierarchy(cfg, client)
+
+    downward = {}
+    for wid, r in rec.items():
+        if r["state"] == done:
+            continue
+        ancestor = _nearest_done_ancestor(rec, wid, done)
+        if ancestor is not None:
+            downward[wid] = ancestor
+
+    upward = [
+        wid for wid, children in kids.items()
+        if rec[wid]["state"] != done and all(rec[c]["state"] == done for c in children)
+    ]
+    return rec, kids, downward, upward
+
+
+def _group_by_ancestor(downward):
+    """Group each open item's id under the done ancestor that explains why it closes."""
+    by_ancestor = {}
+    for wid, ancestor in downward.items():
+        by_ancestor.setdefault(ancestor, []).append(wid)
+    return by_ancestor
+
+
 def close_children(cfg, client, args):
     done = cfg.states["done"]
-    story = cfg.types["story"]
-    task = cfg.types["task"]
     assign_from_parent = getattr(args, "assign_from_parent", False)
+    rec, _kids, downward, _upward = state_drift(cfg, client)
 
-    issue_ids = client.wiql(
-        f"[System.TeamProject]='{cfg.project}' "
-        f"AND [System.WorkItemType]='{story}' "
-        f"AND [System.State]='{done}'"
-    )
-
-    plan = []  # (issue_id, [(task_id, title, assignee_or_None)])
-    for iid in issue_ids:
-        _, item = client.get_item(iid, expand="relations")
-        # Confirm the state locally before we ever write a child's status: the
-        # WIQL filter narrows server-side, but the fetched item is the source of
-        # truth for the item we are about to act on.
-        if item["fields"].get("System.State") != done:
-            continue
-        child_ids = [
-            int(rel["url"].split("/")[-1])
-            for rel in item.get("relations", [])
-            if rel.get("rel") == "System.LinkTypes.Hierarchy-Forward"
-        ]
-        if not child_ids:
-            continue
+    plan = {}
+    for ancestor, wids in _group_by_ancestor(downward).items():
         parent_assignee = (
-            _assignee_value(item["fields"].get("System.AssignedTo"))
-            if assign_from_parent else None
+            _assignee_value(rec[ancestor]["assignee"]) if assign_from_parent else None
         )
-        open_tasks = []
-        for w in client.get_items(
-            child_ids,
-            ["System.Title", "System.WorkItemType", "System.State", "System.AssignedTo"],
-        ):
-            f = w["fields"]
-            if f["System.WorkItemType"] != task or f.get("System.State") == done:
-                continue
-            # Only fill a currently-unassigned Task; never overwrite a deliberate
-            # assignment.
-            assignee = parent_assignee if (parent_assignee and not f.get("System.AssignedTo")) else None
-            open_tasks.append((w["id"], f["System.Title"], assignee))
-        if open_tasks:
-            plan.append((iid, open_tasks))
+        for wid in wids:
+            # Only fill a currently-unassigned item; never overwrite a deliberate one.
+            assignee = parent_assignee if (parent_assignee and not rec[wid]["assignee"]) else None
+            plan.setdefault(ancestor, []).append((wid, rec[wid]["title"], assignee))
 
-    total = sum(len(t) for _, t in plan)
-    n_assign = sum(1 for _, tasks in plan for *_, a in tasks if a)
-    head = f"Done Issues with open child Tasks: {len(plan)}  ({total} task(s) to close"
+    ordered = {pid: sorted(plan[pid]) for pid in sorted(plan)}
+
+    total = sum(len(v) for v in ordered.values())
+    n_assign = sum(1 for v in ordered.values() for *_, a in v if a)
+    head = f"Done parents with open descendants: {len(ordered)}  ({total} item(s) to close"
     if assign_from_parent:
         head += f", {n_assign} to assign"
     print(head + ")")
-    for iid, tasks in plan:
-        print(f"  Issue #{iid}: closing {len(tasks)} task(s)")
-        for tid, title, assignee in tasks:
+    for pid, items in ordered.items():
+        print(f"  {rec[pid]['type']} #{pid}: closing {len(items)} item(s)")
+        for wid, title, assignee in items:
             tag = f"  [+assign {assignee}]" if assignee else ""
-            print(f"      -> #{tid} {title[:80]}{tag}")
+            print(f"      -> {rec[wid]['type']} #{wid} {title[:72]}{tag}")
 
     if not args.go:
         print("\n(dry-run; pass --go to apply)")
         return 0
 
     print("\nApplying...")
-    for iid, tasks in plan:
-        for tid, title, assignee in tasks:
+    for items in ordered.values():
+        for wid, _title, assignee in items:
             ops = [{"op": "add", "path": "/fields/System.State", "value": done}]
             if assignee:
                 ops.append({"op": "add", "path": "/fields/System.AssignedTo", "value": assignee})
-            st, r = client.patch(tid, ops)
-            print(f"  #{tid} -> {done}: {'OK' if st == 200 else f'FAIL {st} {r}'}")
+            st, r = client.patch(wid, ops)
+            print(f"  #{wid} -> {done}: {'OK' if st == 200 else f'FAIL {st} {r}'}")
             time.sleep(0.05)
-    print(f"\nDONE: closed {total} task(s)")
+    print(f"\nDONE: closed {total} item(s)")
     return 0
 
 
@@ -752,6 +796,37 @@ def dedup(cfg, client, args):
 
 
 # --------------------------------------------------------------------------- #
+# check-html: read-only, offline check that every description converts cleanly
+# --------------------------------------------------------------------------- #
+def check_html(cfg, args=None, items=None):
+    """Verify each generated Epic/Issue/Task description is well-formed HTML.
+
+    Azure DevOps shows the description HTML as stored, so a converter that
+    interleaves tags produces a broken card and no other command notices:
+    ``audit`` compares board against backlog, and both sides are equally wrong.
+    """
+    items = items if items is not None else parser.parse_board(cfg)
+    checked = bad = 0
+
+    for it in items:
+        name = it.get("code") or it["title"]
+        blocks = [("description", htmlfmt.markdown_to_html(it["desc_lines"]))]
+        blocks += [
+            (f"task {htmlfmt.plain(b)[:40]}", htmlfmt.inline(b))
+            for b in it.get("bullets", [])
+        ]
+        for what, markup in blocks:
+            checked += 1
+            problems = htmlfmt.unbalanced(markup)
+            if problems:
+                bad += 1
+                print(f"  {name} ({what}): {'; '.join(problems[:3])}")
+
+    print(f"Descriptions checked: {checked}, malformed: {bad}")
+    return 1 if bad else 0
+
+
+# --------------------------------------------------------------------------- #
 # audit: read-only check that the board matches the backlog (returns exit code)
 # --------------------------------------------------------------------------- #
 def audit(cfg, client, args=None):
@@ -815,10 +890,19 @@ def audit(cfg, client, args=None):
         if htmlfmt.norm(c["desc"]) != htmlfmt.norm(b["desc"]):
             fails.append(f"{code} description out of sync")
 
+    # One hierarchy read serves both checks below: which Tasks each Issue owns,
+    # and whether any state contradicts the hierarchy.
+    rec, kids, downward, upward = state_drift(cfg, client)
+    task_type = cfg.types["task"]
+    board_tasks = {
+        pid: {rec[c]["title"] for c in children if rec[c]["type"] == task_type}
+        for pid, children in kids.items()
+    }
+
     checked = 0
     for code in sorted(set(bullets) & set(b_issues)):
         desired = {htmlfmt.plain(x)[:tmax] for x in bullets[code]}
-        actual = set(_child_tasks(cfg, client, b_issues[code]["id"]).values())
+        actual = board_tasks.get(b_issues[code]["id"], set())
         miss = desired - actual
         ext = actual - desired
         if miss:
@@ -827,12 +911,26 @@ def audit(cfg, client, args=None):
             fails.append(f"{code} extra {len(ext)} Task(s): " + "; ".join(sorted(ext)[:3])[:160])
         checked += 1
 
+    # State never comes from the backlog — it has no state column — so this
+    # checks the hierarchy against itself. Azure DevOps does not cascade state,
+    # so a closed Epic can sit above open Issues and Tasks indefinitely.
+    by_parent = _group_by_ancestor(downward)
+    for pid in sorted(by_parent):
+        fails.append(
+            f"{rec[pid]['type']} #{pid} is {cfg.states['done']} with "
+            f"{len(by_parent[pid])} open descendant(s) (run `close-children --go`)"
+        )
+
     print("=" * 60)
     print(f"ADO TRUTH AUDIT — {cfg.org}/{cfg.project}")
     print("=" * 60)
     print(f"Epics      : board {len(b_epics):>3}  / backlog {len(want_epics):>3}")
     print(f"Issues     : board {len(b_issues):>3}  / backlog {len(want_issues):>3}")
     print(f"Task-parity: checked {checked} issues against backlog bullets")
+    print(f"State      : {len(by_parent)} done parent(s) with {len(downward)} open descendant(s)")
+    if upward:
+        names = ", ".join(f"#{w}" for w in sorted(upward)[:5])
+        print(f"             {len(upward)} parent(s) with every child done: {names} (review)")
     n_dups = sum(len(ids) - 1 for ids in epic_title_ids.values() if len(ids) > 1)
     n_dups += sum(len(ids) - 1 for ids in issue_code_ids.values() if len(ids) > 1)
     print(f"Duplicates : {n_dups} extra work item(s) sharing a code/title")

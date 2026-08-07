@@ -4,6 +4,7 @@ Azure DevOps stores ``System.Description`` as HTML, so backlog Markdown is
 converted on the way in; ``norm``/``plain`` reverse it for stable comparisons.
 """
 import re
+from html.parser import HTMLParser
 
 
 def escape_html(text):
@@ -92,34 +93,53 @@ def _fold(lines):
     return blocks
 
 
+def _table_lines(rows):
+    """Render collected table rows. The |---| separator row carries no data."""
+    rows = [r for r in rows if not TABLE_SEP.match(r)]
+    if not rows:
+        return []
+    head = "".join(f'<th style="{HEAD_STYLE}">{_fmt(c)}</th>' for c in _cells(rows[0]))
+    out = [f'<table style="{TABLE_STYLE}">', f"<tr>{head}</tr>"]
+    for row in rows[1:]:
+        body = "".join(f'<td style="{CELL_STYLE}">{_fmt(c)}</td>' for c in _cells(row))
+        out.append(f"<tr>{body}</tr>")
+    out.append("</table>")
+    return out
+
+
+def _close_li(out):
+    out[-1] += "</li>"
+
+
+def _open_bullet(out, stack, indent):
+    """Adjust the open <ul> stack so a bullet at ``indent`` can be appended."""
+    if not stack or indent > stack[-1]:
+        out.append("<ul>")              # a deeper level nests in the open <li>
+        stack.append(indent)
+        return
+    while len(stack) > 1 and indent < stack[-1]:
+        _close_li(out)
+        out.append("</ul>")
+        stack.pop()
+    _close_li(out)                      # close the previous sibling
+
+
 def markdown_to_html(lines):
     """Convert markdown lines (bullets, tables, bold, italics, code) to HTML."""
     out = []
     stack = []   # indent of each open <ul>
     table = []
 
-    def close_li():
-        if out:
-            out[-1] += "</li>"
-
     def close_lists():
         while stack:
-            close_li()
+            _close_li(out)
             out.append("</ul>")
             stack.pop()
 
     def flush_table():
-        rows = [r for r in table if not TABLE_SEP.match(r)]
-        table.clear()
-        if not rows:
-            return
-        out.append(f'<table style="{TABLE_STYLE}">')
-        head = "".join(f'<th style="{HEAD_STYLE}">{_fmt(c)}</th>' for c in _cells(rows[0]))
-        out.append(f"<tr>{head}</tr>")
-        for row in rows[1:]:
-            body = "".join(f'<td style="{CELL_STYLE}">{_fmt(c)}</td>' for c in _cells(row))
-            out.append(f"<tr>{body}</tr>")
-        out.append("</table>")
+        if table:
+            out.extend(_table_lines(table))
+            table.clear()
 
     for kind, payload in _fold(lines):
         if kind == "row":
@@ -128,24 +148,13 @@ def markdown_to_html(lines):
             continue
         flush_table()
 
-        if kind == "blank":
-            continue
         if kind == "rule":
             close_lists()
             out.append("<hr>")
         elif kind == "bullet":
-            indent, text = payload
-            if not stack or indent > stack[-1]:
-                out.append("<ul>")          # a deeper level nests in the open <li>
-                stack.append(indent)
-            else:
-                while len(stack) > 1 and indent < stack[-1]:
-                    close_li()
-                    out.append("</ul>")
-                    stack.pop()
-                close_li()                  # close the previous sibling
-            out.append(f"<li>{_fmt(text)}")
-        else:
+            _open_bullet(out, stack, payload[0])
+            out.append(f"<li>{_fmt(payload[1])}")
+        elif kind == "text":
             close_lists()
             out.append(f"<p>{_fmt(payload)}</p>")
 
@@ -167,6 +176,40 @@ def plain(t):
     t = re.sub(r"`([^`]+)`", r"\1", t)
     t = re.sub(r"\*\*([^*]+)\*\*", r"\1", t)
     return re.sub(r"\s+", " ", t).strip()
+
+
+VOID_TAGS = {"hr", "br", "img"}
+
+
+class _Balance(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.problems = []
+
+    def handle_starttag(self, tag, attrs):
+        if tag not in VOID_TAGS:
+            self.stack.append(tag)
+
+    def handle_endtag(self, tag):
+        if not self.stack:
+            self.problems.append(f"</{tag}> closes nothing")
+        elif self.stack[-1] != tag:
+            self.problems.append(f"</{tag}> closes an open <{self.stack[-1]}>")
+        else:
+            self.stack.pop()
+
+
+def unbalanced(markup):
+    """Return the tag problems in ``markup``; an empty list means it is well formed.
+
+    Azure DevOps stores the description as HTML and shows it unchanged, so
+    interleaved or unclosed tags reach the browser. Nothing else catches that.
+    """
+    p = _Balance()
+    p.feed(markup)
+    p.close()
+    return p.problems + [f"<{t}> never closes" for t in p.stack]
 
 
 def norm(h):
