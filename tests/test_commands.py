@@ -387,6 +387,85 @@ class CommandsTest(unittest.TestCase):
     def test_sprints_returns_error_when_none_configured(self):
         self.assertEqual(commands.sprints(self.cfg, self.client, Args(go=True)), 1)
 
+    # --- assign ------------------------------------------------------------
+    def _assign_cfg(self):
+        return build_cfg(
+            os.path.join(self.tmp.name, "out.csv"),
+            assignees={
+                "alice@example.com": ["PROJ-101", "PROJ-102"],
+                "bob@example.com": ["PROJ-201"],
+            },
+        )
+
+    def test_assign_dry_run_changes_nothing(self):
+        cfg = self._assign_cfg()
+        commands.import_items(cfg, self.client, Args(go=True))
+        commands.assign(cfg, self.client, Args(go=False))
+        for it in self.client.items.values():
+            self.assertNotIn("System.AssignedTo", it["fields"])
+
+    def test_assign_sets_issue_and_cascades_tasks(self):
+        cfg = self._assign_cfg()
+        commands.import_items(cfg, self.client, Args(go=True))
+        commands.resync_tasks(cfg, self.client, Args(go=True))
+        commands.assign(cfg, self.client, Args(go=True))
+        issue_id = self._issue_id_by_code("PROJ-101")
+        self.assertEqual(
+            self.client.items[issue_id]["fields"]["System.AssignedTo"], "alice@example.com"
+        )
+        children = self._children(issue_id)
+        self.assertTrue(children)
+        for cid in children:
+            self.assertEqual(
+                self.client.items[cid]["fields"]["System.AssignedTo"], "alice@example.com"
+            )
+        self.assertEqual(
+            self.client.items[self._issue_id_by_code("PROJ-201")]["fields"]["System.AssignedTo"],
+            "bob@example.com",
+        )
+
+    def test_assign_no_tasks_leaves_child_tasks_unassigned(self):
+        cfg = self._assign_cfg()
+        commands.import_items(cfg, self.client, Args(go=True))
+        commands.resync_tasks(cfg, self.client, Args(go=True))
+        commands.assign(cfg, self.client, Args(go=True, no_tasks=True))
+        issue_id = self._issue_id_by_code("PROJ-101")
+        self.assertEqual(
+            self.client.items[issue_id]["fields"]["System.AssignedTo"], "alice@example.com"
+        )
+        for cid in self._children(issue_id):
+            self.assertNotIn("System.AssignedTo", self.client.items[cid]["fields"])
+
+    def test_assign_only_unassigned_does_not_overwrite(self):
+        cfg = self._assign_cfg()
+        commands.import_items(cfg, self.client, Args(go=True))
+        issue_id = self._issue_id_by_code("PROJ-101")
+        # Pre-assign to someone else; --only-unassigned must leave it alone.
+        self.client.items[issue_id]["fields"]["System.AssignedTo"] = {"uniqueName": "carol@example.com"}
+        commands.assign(cfg, self.client, Args(go=True, only_unassigned=True))
+        self.assertEqual(
+            self.client.items[issue_id]["fields"]["System.AssignedTo"],
+            {"uniqueName": "carol@example.com"},
+        )
+
+    def test_assign_is_idempotent_skips_already_correct(self):
+        cfg = self._assign_cfg()
+        commands.import_items(cfg, self.client, Args(go=True))
+        commands.assign(cfg, self.client, Args(go=True))
+        issue_id = self._issue_id_by_code("PROJ-101")
+        # Already resolves to alice; a second run must not re-plan it.
+        import contextlib
+        import io
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            commands.assign(cfg, self.client, Args(go=True))
+        self.assertIn("0 issue(s)", out.getvalue())
+        self.assertIn("already correct", out.getvalue())
+
+    def test_assign_returns_error_when_none_configured(self):
+        commands.import_items(self.cfg, self.client, Args(go=True))
+        self.assertEqual(commands.assign(self.cfg, self.client, Args(go=True)), 1)
+
     # --- audit -------------------------------------------------------------
     def test_audit_passes_after_full_sync(self):
         commands.import_items(self.cfg, self.client, Args(go=True))

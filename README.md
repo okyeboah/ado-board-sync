@@ -84,6 +84,7 @@ it. `board.config.schema.json` documents and validates the structure.
 | `task_title_max` | no | `250` | Max Task title length (bullets are truncated to this) |
 | `team` | no | `null` | Team whose sprint view iterations are added to; `null` auto-detects `<Project> Team` |
 | `iterations` | no | `[]` | Sprints for the `sprints` command (see below) |
+| `assignees` | no | `{}` | Owners for the `assign` command (see below) |
 | `max_retries` | no | `0` | Maximum number of retries for idempotent REST client requests |
 | `backoff` | no | `1.5` | Base exponential-ish backoff sleep duration in seconds |
 | `timeout` | no | `20` | REST client request timeout in seconds |
@@ -106,6 +107,27 @@ them. Declare them in the config — each entry lists the Issue codes it owns:
 - Creating iteration nodes needs the **Create child nodes** permission on the
   project's iteration tree (a project-settings ACL, *not* a PAT scope). If it's
   denied, have a project admin create the nodes, then run `sprints --go --assign-only`.
+
+#### Assignees (`assignees`)
+
+The `assign` command sets each Issue's owner (`System.AssignedTo`) from the
+config so a planned work split is reproducible instead of hand-clicked in the
+UI. Each key is an ADO identity; its value lists the Issue codes that person owns:
+
+```json
+"assignees": {
+  "alice@your-organisation.com": ["PROJ-101", "PROJ-102"],
+  "bob@your-organisation.com": ["PROJ-201"]
+}
+```
+
+- The identity is an ADO account string — a `uniqueName`/email, or a display
+  name the organisation resolves.
+- Each Issue's child Tasks inherit the Issue's owner (unless `--no-tasks`).
+- Already-correct assignments are skipped, so re-running is a no-op.
+- If a code appears under two identities the **first listed** wins.
+- Setting `System.AssignedTo` needs only the PAT's **Work Items: Read & Write**
+  scope — no special project ACL (unlike `sprints`).
 
 ### Credentials
 
@@ -135,10 +157,11 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 | `audit` | Read-only check that the board matches the backlog; exit 1 on drift |
 | `sync` | `gen-csv → import → resync → resync-tasks → audit` |
 | `sprints` | Create the configured iterations and assign Issues (+ child Tasks) to them |
+| `assign` | Set each Issue's (and child Tasks') assignee from the `assignees` config |
 
 `gen-csv` and `audit` never modify the board. `import`, `resync`,
-`resync-tasks`, `close-children`, `dedup`, `sprints`, and `sync` print their plan and require `--go` to write.
-`close-children` is intentionally excluded from `sync`: `sync` is a structural reconcile, whereas closing Tasks changes workflow status, so it must be run explicitly.
+`resync-tasks`, `close-children`, `dedup`, `sprints`, `assign`, and `sync` print their plan and require `--go` to write.
+`close-children` and `assign` are intentionally excluded from `sync`: `sync` is a structural reconcile, whereas closing Tasks or setting owners changes workflow/ownership metadata, so each must be run explicitly.
 
 The backlog Markdown is the single source of truth: `resync`, `resync-tasks`, and
 `audit` all read it directly, so editing the backlog and running any of them updates the
@@ -149,6 +172,10 @@ stale CSV can never produce a false PASS.
 `sprints` also accepts `--assign-only` (skip node creation; the iterations must
 already exist), `--no-tasks` (assign Issues only, don't cascade to Tasks), and
 `--reset-on-missing` (reset Issue iteration path to project root if sprint assignment fails).
+
+`assign` accepts `--no-tasks` (set the Issue owner only, don't cascade to child
+Tasks) and `--only-unassigned` (fill an owner only where none is set; never
+overwrite a deliberate assignment).
 
 ### Typical flow
 

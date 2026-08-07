@@ -120,6 +120,15 @@
           }
         }
       }
+    },
+    "assignees": {
+      "type": "object",
+      "description": "Owners for the 'assign' command. Each key is an ADO identity (uniqueName/email, or a display name the org resolves); each value lists the Issue codes that identity owns. The identity is set as System.AssignedTo on each Issue and cascaded to its child Tasks. If a code appears under two identities the first listed wins.",
+      "default": {},
+      "additionalProperties": {
+        "type": "array",
+        "items": { "type": "string" }
+      }
     }
   }
 }

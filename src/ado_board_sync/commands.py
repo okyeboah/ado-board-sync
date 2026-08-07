@@ -509,6 +509,154 @@ def sprints(cfg, client, args):
 
 
 # --------------------------------------------------------------------------- #
+# assign: set System.AssignedTo on Issues (+ child Tasks) from the config
+# --------------------------------------------------------------------------- #
+# Azure DevOps has no backlog-driven ownership: assignment is a per-item field
+# set by hand in the UI. This command drives it from the `assignees` config
+# ({identity: [codes]}) so a planned work split is reproducible and reviewable.
+# Like `sprints`/`close-children` it changes ownership metadata, not structure,
+# so it is invoked explicitly and never folded into `sync`.
+def _assignee_ids(cfg):
+    """Flatten cfg.assignees ({identity: [codes]}) into CODE -> identity.
+
+    If a code is listed under more than one identity the *first listed* wins
+    (mirrors `sprints`, where the earliest bucket claims a shared code)."""
+    code_owner = {}
+    for identity, codes in (cfg.assignees or {}).items():
+        for c in codes:
+            code_owner.setdefault(c.upper(), identity)
+    return code_owner
+
+
+def _assignee_matches(field, desired):
+    """True if a work item's current System.AssignedTo already resolves to
+    ``desired``. Reads come back as an identity object; compare the wanted
+    string against its uniqueName, id, and displayName, case-insensitively."""
+    if not field:
+        return False
+    want = desired.strip().lower()
+    if isinstance(field, dict):
+        return any(
+            (field.get(k) or "").strip().lower() == want
+            for k in ("uniqueName", "id", "displayName")
+        )
+    return str(field).strip().lower() == want
+
+
+def _child_tasks_assignee(cfg, client, parent_id):
+    """Child Tasks of ``parent_id`` as [(task_id, assigned_to_field)]."""
+    _, r = client.get_item(parent_id, expand="relations")
+    child_ids = [
+        int(rel["url"].split("/")[-1])
+        for rel in r.get("relations", [])
+        if rel.get("rel") == "System.LinkTypes.Hierarchy-Forward"
+    ]
+    out = []
+    if child_ids:
+        for w in client.get_items(
+            child_ids, ["System.WorkItemType", "System.AssignedTo"]
+        ):
+            if w["fields"].get("System.WorkItemType") == cfg.types["task"]:
+                out.append((w["id"], w["fields"].get("System.AssignedTo")))
+    return out
+
+
+def assign(cfg, client, args):
+    owner = _assignee_ids(cfg)
+    if not owner:
+        print("No assignees configured. Add an 'assignees' object to board.config.json "
+              "(each key an ADO identity, each value a list of Issue codes).")
+        return 1
+
+    story = cfg.types["story"]
+    only_unassigned = getattr(args, "only_unassigned", False)
+    do_tasks = not getattr(args, "no_tasks", False)
+
+    ids = client.wiql(
+        f"[System.TeamProject]='{cfg.project}' "
+        f"AND [System.WorkItemType]='{story}'"
+    )
+    code_item = {}  # CODE -> (issue_id, current_assignee_field)
+    for w in client.get_items(ids, ["System.Id", "System.Title", "System.AssignedTo"]):
+        m = cfg.issue_code_re.search(w["fields"].get("System.Title", ""))
+        if m:
+            code_item[m.group(1).upper()] = (w["id"], w["fields"].get("System.AssignedTo"))
+
+    board_codes = set(code_item)
+    unknown = sorted(set(owner) - board_codes)     # configured, not on the board
+    uncovered = sorted(board_codes - set(owner))   # on the board, no owner in config
+
+    # (code, issue_id, desired, current_display, issue_needs, [task_ids])
+    plan = []
+    skipped = 0
+    for code in sorted(set(owner) & board_codes):
+        iid, current = code_item[code]
+        desired = owner[code]
+
+        if _assignee_matches(current, desired) or (only_unassigned and current):
+            issue_needs = False
+            skipped += 1
+        else:
+            issue_needs = True
+
+        task_ids = []
+        if do_tasks:
+            for tid, tfield in _child_tasks_assignee(cfg, client, iid):
+                if _assignee_matches(tfield, desired) or (only_unassigned and tfield):
+                    continue
+                task_ids.append(tid)
+
+        if issue_needs or task_ids:
+            plan.append((code, iid, desired, _assignee_value(current), issue_needs, task_ids))
+
+    n_issue = sum(1 for *_, needs, _ in plan if needs)
+    n_task = sum(len(t) for *_, t in plan)
+    print(f"Assignee changes: {n_issue} issue(s), {n_task} task(s)"
+          + (f"; {skipped} already correct" if skipped else ""))
+    for code, iid, desired, current_disp, issue_needs, task_ids in plan:
+        if issue_needs:
+            frm = current_disp or "(unassigned)"
+            tag = f"  [+{len(task_ids)} task(s)]" if task_ids else ""
+            print(f"  {code} (#{iid}): {frm} -> {desired}{tag}")
+        else:
+            print(f"  {code} (#{iid}): issue kept; {len(task_ids)} task(s) -> {desired}")
+    if unknown:
+        print(f"WARN codes in config not found on board: {unknown}")
+    if uncovered:
+        print(f"INFO board issues with no assignee in config: {uncovered}")
+
+    if not args.go:
+        print("\n(dry-run; pass --go to apply)")
+        return 0
+
+    print("\nApplying...")
+    ok = fail = task_ok = task_fail = 0
+    for code, iid, desired, _current, issue_needs, task_ids in plan:
+        op = [{"op": "add", "path": "/fields/System.AssignedTo", "value": desired}]
+        if issue_needs:
+            st, r = client.patch(iid, op)
+            if st == 200:
+                ok += 1
+            else:
+                fail += 1
+                print(f"  FAIL issue {code} #{iid} -> {desired}: {st} {r}")
+        for tid in task_ids:
+            st, r = client.patch(tid, op)
+            if st == 200:
+                task_ok += 1
+            else:
+                task_fail += 1
+                print(f"  FAIL task #{tid} of {code} -> {desired}: {st} {r}")
+        time.sleep(0.02)
+
+    print("\n" + "-" * 60)
+    print(f"Issues assigned: {ok} ok, {fail} fail")
+    if do_tasks:
+        print(f"Tasks  assigned: {task_ok} ok, {task_fail} fail")
+    return 0 if (fail == 0 and task_fail == 0) else 1
+
+
+# --------------------------------------------------------------------------- #
 # dedup: delete duplicate work items
 # --------------------------------------------------------------------------- #
 def dedup(cfg, client, args):

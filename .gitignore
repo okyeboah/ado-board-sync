@@ -23,7 +23,6 @@ presentation.html
 .claude-flow/logs/
 .claude-flow/sessions/
 
-# ruflo / claude-flow artefacts (added 2026-08-02)
 .claude/
 .claude-flow/
 .swarm/

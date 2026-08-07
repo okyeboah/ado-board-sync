@@ -25,5 +25,9 @@
   "iterations": [
     { "name": "Sprint 1", "start": "2026-06-29", "finish": "2026-07-10", "items": ["PROJ-101", "PROJ-102"] },
     { "name": "Sprint 2", "start": "2026-07-13", "finish": "2026-07-24", "items": ["PROJ-201"] }
-  ]
+  ],
+  "assignees": {
+    "alice@your-organisation.com": ["PROJ-101", "PROJ-102"],
+    "bob@your-organisation.com": ["PROJ-201"]
+  }
 }

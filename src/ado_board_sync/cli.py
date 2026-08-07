@@ -52,6 +52,16 @@ def _build_parser():
         "--reset-on-missing", action="store_true",
         help="reset Issue iteration path to project root if sprint assignment fails",
     )
+
+    ap = add("assign", "Set each Issue's (and child Tasks') assignee from the 'assignees' config", go=True)
+    ap.add_argument(
+        "--no-tasks", action="store_true",
+        help="assign Issues only; do not cascade the assignee to child Tasks",
+    )
+    ap.add_argument(
+        "--only-unassigned", action="store_true",
+        help="only set an assignee where none is set; never overwrite an existing one",
+    )
     return p
 
 
@@ -80,6 +90,8 @@ def main(argv=None):
         return commands.close_children(cfg, client, args)
     if args.cmd == "sprints":
         return commands.sprints(cfg, client, args)
+    if args.cmd == "assign":
+        return commands.assign(cfg, client, args)
     if args.cmd == "dedup":
         return commands.dedup(cfg, client, args)
     if args.cmd == "audit":

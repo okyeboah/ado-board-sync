@@ -29,6 +29,7 @@ DEFAULTS = {
     "task_title_max": 250,
     "team": None,
     "iterations": [],
+    "assignees": {},
     "max_retries": 3,
     "backoff": 1.5,
     "timeout": 20,
@@ -71,6 +72,11 @@ class Config:
         # `team` overrides the auto-detected team the sprints are added to.
         self.team = data.get("team", DEFAULTS["team"])
         self.iterations = data.get("iterations", DEFAULTS["iterations"])
+
+        # Assignees: {identity -> [codes]}. Used by the `assign` command to set
+        # System.AssignedTo on each Issue (+ its child Tasks). The identity is an
+        # ADO account string (uniqueName/email, or display name the org resolves).
+        self.assignees = data.get("assignees", DEFAULTS["assignees"])
 
         self.issue_code_re = re.compile(r"(%s-\d+)" % re.escape(self.code_prefix))
         self.base_url = f"https://dev.azure.com/{self.org}/{self.project}/_apis"
