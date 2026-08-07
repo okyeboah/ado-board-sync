@@ -45,6 +45,28 @@ Rules:
   `code_prefix`. Codes are the stable identity used to match backlog items to
   board items across renames.
 
+### What a description can contain
+
+Azure DevOps stores a description as HTML, so the backlog Markdown is converted
+before it is written. These constructs are supported:
+
+| Markdown | Rendered as |
+| --- | --- |
+| `**bold**`, `*italics*`, `` `code` `` | `<b>`, `<i>`, `<code>` |
+| `-` / `*` bullets | `<ul>`, nested by indentation |
+| a pipe table, with or without a separator row | `<table>`; row one becomes `<th>` |
+| `---` | `<hr>` |
+
+Two things follow from the conversion:
+
+- A line that wraps is joined to the block above it. A blank line ends a block,
+  which is what separates one paragraph or bullet from the next.
+- Tables carry inline border styles, because Azure DevOps applies no stylesheet
+  of its own to the field.
+
+Run `check-html` after changing the backlog. It converts every description
+offline and fails on markup that no browser can render.
+
 Example:
 
 ```markdown
@@ -75,7 +97,7 @@ it. `board.config.schema.json` documents and validates the structure.
 | `board_file` | no | `docs/backlog.md` | Backlog Markdown path (relative to the config file) |
 | `csv_file` | no | `build/work-items.csv` | Where the import CSV is written by `gen-csv` and read by `import` (the ADO web importer can also use it). `resync` and `audit` read the backlog directly, not this file. |
 | `types` | no | `{epic:Epic, story:Issue, task:Task}` | Work-item type names for the three levels (Agile uses `User Story`) |
-| `states` | no | `{done:Done}` | Terminal state name used by `close-children` (Agile/CMMI use `Closed`/`Resolved`) |
+| `states` | no | `{done:Done}` | Terminal state name used by `close-children` and by the `audit` state check (Agile/CMMI use `Closed`/`Resolved`) |
 | `epic_heading_regex` | no | `^##\s+(Epic\b.*)$` | Regex matching an Epic heading; capture group 1 is the title |
 | `stop_headings` | no | `[]` | Line prefixes that end the backlog body |
 | `api_version` | no | `7.1` | Azure DevOps REST API version |
@@ -89,7 +111,7 @@ it. `board.config.schema.json` documents and validates the structure.
 | `backoff` | no | `1.5` | Base exponential-ish backoff sleep duration in seconds |
 | `timeout` | no | `20` | REST client request timeout in seconds |
 
-#### Sprints (`iterations`)
+### Sprints (`iterations`)
 
 The `sprints` command creates iteration (sprint) nodes and assigns Issues to
 them. Declare them in the config — each entry lists the Issue codes it owns:
@@ -108,7 +130,7 @@ them. Declare them in the config — each entry lists the Issue codes it owns:
   project's iteration tree (a project-settings ACL, *not* a PAT scope). If it's
   denied, have a project admin create the nodes, then run `sprints --go --assign-only`.
 
-#### Assignees (`assignees`)
+### Assignees (`assignees`)
 
 The `assign` command sets each Issue's owner (`System.AssignedTo`) from the
 config so a planned work split is reproducible instead of hand-clicked in the
@@ -152,16 +174,24 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 | `import` | Create Epics/Issues that are missing from the board (idempotent) |
 | `resync` | Update Epic/Issue titles + descriptions to match the backlog |
 | `resync-tasks` | Add/delete each Issue's child Tasks to match the backlog bullets |
-| `close-children` | Set every child Task to Done for each Issue already Done (Azure DevOps doesn't cascade state downward). `--assign-from-parent` also copies the Issue's assignee onto each closed Task that is currently unassigned (never overwrites an existing assignee) |
+| `close-children` | Close every open descendant of a work item already Done — Epic → Issue → Task, at any depth (Azure DevOps doesn't cascade state downward). `--assign-from-parent` also copies the done ancestor's assignee onto each closed item that is currently unassigned (never overwrites an existing assignee) |
 | `dedup` | Delete duplicate work items (same code, or same title under one parent) |
-| `audit` | Read-only check that the board matches the backlog; exit 1 on drift |
-| `sync` | `gen-csv → import → resync → resync-tasks → audit` |
+| `check-html` | Read-only, offline check that every description converts to valid HTML; exit 1 on malformed markup. Needs no PAT and no network |
+| `audit` | Read-only check that the board matches the backlog **and that its states agree with its hierarchy**; exit 1 on drift |
+| `sync` | `gen-csv → check-html → import → resync → resync-tasks → audit`. Aborts before the first write if any description is malformed |
 | `sprints` | Create the configured iterations and assign Issues (+ child Tasks) to them |
 | `assign` | Set each Issue's (and child Tasks') assignee from the `assignees` config |
 
-`gen-csv` and `audit` never modify the board. `import`, `resync`,
+`gen-csv`, `check-html`, and `audit` never modify the board. `import`, `resync`,
 `resync-tasks`, `close-children`, `dedup`, `sprints`, `assign`, and `sync` print their plan and require `--go` to write.
-`close-children` and `assign` are intentionally excluded from `sync`: `sync` is a structural reconcile, whereas closing Tasks or setting owners changes workflow/ownership metadata, so each must be run explicitly.
+`close-children` and `assign` are intentionally excluded from `sync`: `sync` is a structural
+reconcile, whereas closing items or setting owners changes workflow/ownership metadata, so each
+must be run explicitly.
+
+One consequence: `sync` returns the exit code of `audit`, and `audit` fails when a done parent
+still has open descendants. So `sync` reports state drift but never repairs it — it exits 1 until
+you clear the drift with `close-children --go`. That is deliberate. Closing someone's work item is
+a decision, not a reconcile, so the tool surfaces it and waits.
 
 The backlog Markdown is the single source of truth: `resync`, `resync-tasks`, and
 `audit` all read it directly, so editing the backlog and running any of them updates the
@@ -209,6 +239,7 @@ Azure DevOps client — no network access required).
 | `WIQL failed: 401` / `Batch get failed: 401` | PAT is invalid, expired, or missing the **Work Items: Read & Write** scope. Regenerate it. |
 | `WIQL failed: 404` (or all items missing) | Wrong `org` / `project` in the config, or the PAT belongs to a different organisation. |
 | `FAIL create Issue … 400 … work item type 'Issue' … does not exist` | `types` don't match your project's process template. Basic → `Epic/Issue/Task`; Agile → `Epic/User Story/Task`; Scrum → `Epic/Product Backlog Item/Task`. |
+| `audit` reports a done parent with open descendants | Azure DevOps does not cascade state, so a closed Epic or Issue leaves its children open. Run `close-children --go`. |
 | `audit` reports `Epic count` / `Issues … missing` drift | The board and backlog disagree — run `import --go` then `resync --go` / `resync-tasks --go`, or fix the backlog, then re-audit. |
 | `sprints`: `create failed: … TF50309 … Create child nodes` | Your account lacks the **Create child nodes** ACL on the iteration tree (a project-settings permission, not a PAT scope). Have an admin grant it or create the nodes, then run `sprints --go --assign-only`. |
 | `sprints`: `TF401347: Invalid tree name … System.IterationPath` | The target iteration node doesn't exist yet — create the sprints first (drop `--assign-only`) or have an admin add them. |
