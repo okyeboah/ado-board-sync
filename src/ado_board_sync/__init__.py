@@ -5,4 +5,4 @@ backlog file, issue code prefix, and work-item type names. The commands then
 parse the backlog and reconcile the board (Epics, Issues/Stories, Tasks) to it.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

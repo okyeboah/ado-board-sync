@@ -1,0 +1,7 @@
+{
+  // Whitespace and structure rules stay on. The rule below conflicts with the
+  // intended style of these documents:
+  "default": true,
+  "MD013": false // line-length: the command, config, and backlog-format tables
+                 //   are wide on purpose; wrapping them hurts readability
+}
