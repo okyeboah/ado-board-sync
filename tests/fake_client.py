@@ -38,6 +38,8 @@ class FakeClient:
         self.items[child]["relations"].append(
             {"rel": REVERSE, "url": f"{self.cfg.org_url}/wit/workItems/{parent}"}
         )
+        # Azure DevOps keeps System.Parent in step with the hierarchy relation.
+        self.items[child]["fields"]["System.Parent"] = parent
         self.items[parent]["relations"].append(
             {"rel": FORWARD, "url": f"{self.cfg.org_url}/wit/workItems/{child}"}
         )
@@ -79,6 +81,7 @@ class FakeClient:
                 self.items[wid]["relations"].append(rel)
                 if rel["rel"] == REVERSE:
                     parent = int(rel["url"].split("/")[-1])
+                    self.items[wid]["fields"]["System.Parent"] = parent
                     self.items[parent]["relations"].append(
                         {"rel": FORWARD, "url": f"{self.cfg.org_url}/wit/workItems/{wid}"}
                     )

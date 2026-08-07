@@ -29,6 +29,10 @@ class CommandsTest(unittest.TestCase):
         _, item = self.client.get_item(parent_id)
         return [int(r["url"].split("/")[-1]) for r in item["relations"] if r["rel"] == FORWARD]
 
+    # --- check-html --------------------------------------------------------
+    def test_check_html_passes_on_the_fixture_backlog(self):
+        self.assertEqual(commands.check_html(self.cfg), 0)
+
     # --- import ------------------------------------------------------------
     def test_import_dry_run_creates_nothing(self):
         commands.import_items(self.cfg, self.client, Args(go=False))
@@ -172,6 +176,22 @@ class CommandsTest(unittest.TestCase):
         commands.close_children(self.cfg, self.client, Args(go=True))
         for tid in tasks:
             self.assertEqual(self.client.items[tid]["fields"]["System.State"], "Done")
+
+    def test_close_children_cascades_from_a_done_epic_through_issue_to_task(self):
+        epic = self.client.add_item("Epic", "Epic 9 — Shipped", state="Done")
+        issue = self.client.add_item("Issue", "PROJ-901 \u00b7 Open issue", parent=epic, state="Doing")
+        task = self.client.add_item("Task", "Open task", parent=issue, state="To Do")
+        commands.close_children(self.cfg, self.client, Args(go=True))
+        self.assertEqual(self.client.items[issue]["fields"]["System.State"], "Done")
+        self.assertEqual(self.client.items[task]["fields"]["System.State"], "Done")
+
+    def test_close_children_leaves_descendants_of_an_open_epic_alone(self):
+        epic = self.client.add_item("Epic", "Epic 9 — In flight", state="Doing")
+        issue = self.client.add_item("Issue", "PROJ-902 \u00b7 Open issue", parent=epic, state="Doing")
+        task = self.client.add_item("Task", "Open task", parent=issue, state="To Do")
+        commands.close_children(self.cfg, self.client, Args(go=True))
+        self.assertEqual(self.client.items[issue]["fields"]["System.State"], "Doing")
+        self.assertEqual(self.client.items[task]["fields"]["System.State"], "To Do")
 
     def test_close_children_dry_run_changes_nothing(self):
         _, tasks = self._seed_issue_with_tasks("Done", ["Doing", "To Do"])
@@ -484,6 +504,29 @@ class CommandsTest(unittest.TestCase):
         )
         self.client.items[issue_id]["fields"]["System.Description"] = "wiped"
         self.assertEqual(commands.audit(self.cfg, self.client), 1)
+
+    def test_audit_fails_when_a_done_parent_has_open_descendants(self):
+        commands.import_items(self.cfg, self.client, Args(go=True))
+        commands.resync_tasks(self.cfg, self.client, Args(go=True))
+        self.assertEqual(commands.audit(self.cfg, self.client), 0)
+        # Close an Issue but leave its Tasks open. Azure DevOps does not cascade
+        # state, so the board is now internally inconsistent even though every
+        # title and description still matches the backlog.
+        issue_id = next(
+            wid for wid, it in self.client.items.items()
+            if it["fields"]["System.WorkItemType"] == "Issue" and it["relations"]
+        )
+        self.client.items[issue_id]["fields"]["System.State"] = "Done"
+        self.assertEqual(commands.audit(self.cfg, self.client), 1)
+
+    def test_audit_passes_when_every_child_is_done_but_the_parent_is_not(self):
+        commands.import_items(self.cfg, self.client, Args(go=True))
+        commands.resync_tasks(self.cfg, self.client, Args(go=True))
+        for it in self.client.items.values():
+            if it["fields"]["System.WorkItemType"] == "Task":
+                it["fields"]["System.State"] = "Done"
+        # Closing the parent is a judgement call, so this is reported, not failed.
+        self.assertEqual(commands.audit(self.cfg, self.client), 0)
 
     def test_audit_fails_when_issue_missing(self):
         commands.import_items(self.cfg, self.client, Args(go=True))

@@ -56,6 +56,21 @@ class HtmlFmtTest(unittest.TestCase):
             "<p><code>SharedKernel.*</code> needs no <code>DDI.*</code> project</p>",
         )
 
+    def test_unbalanced_accepts_generated_markup(self):
+        html = htmlfmt.markdown_to_html(
+            ["| A | B |", "|---|---|", "| `x` | y |", "", "- parent", "  * child"]
+        )
+        self.assertEqual(htmlfmt.unbalanced(html), [])
+
+    def test_unbalanced_reports_interleaved_tags(self):
+        self.assertTrue(htmlfmt.unbalanced("<i>a<code>b</i>c</code>"))
+
+    def test_unbalanced_reports_an_unclosed_tag(self):
+        self.assertEqual(htmlfmt.unbalanced("<ul><li>a"), ["<ul> never closes", "<li> never closes"])
+
+    def test_unbalanced_ignores_void_tags(self):
+        self.assertEqual(htmlfmt.unbalanced("<p>a</p>\n<hr>"), [])
+
     def test_plain_strips_inline_markdown(self):
         self.assertEqual(
             htmlfmt.plain("Add **optimistic-concurrency** checks for `x`"),
