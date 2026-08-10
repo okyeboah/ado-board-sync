@@ -180,6 +180,7 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 | `audit` | Read-only check that the board matches the backlog **and that its states agree with its hierarchy**; exit 1 on drift |
 | `sync` | `gen-csv → check-html → import → resync → resync-tasks → audit`. Aborts before the first write if any description is malformed |
 | `sprints` | Create the configured iterations and assign Issues (+ child Tasks) to them |
+| `sync-one CODE --sprint NAME --go` | Create or update one Issue and its iteration only; it never changes Tasks or assignees |
 | `assign` | Set each Issue's (and child Tasks') assignee from the `assignees` config |
 
 `gen-csv`, `check-html`, and `audit` never modify the board. `import`, `resync`,

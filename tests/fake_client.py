@@ -1,4 +1,5 @@
 """In-memory Azure DevOps client used by command tests (no network)."""
+import re
 
 FORWARD = "System.LinkTypes.Hierarchy-Forward"
 REVERSE = "System.LinkTypes.Hierarchy-Reverse"
@@ -47,9 +48,16 @@ class FakeClient:
     # --- Client interface --------------------------------------------------
     def wiql(self, where):
         types = [t for t in self._type_names if f"'{t}'" in where]
+        m_contains = re.search(r"CONTAINS '([^']*)'", where)
+        m_title = re.search(r"\[System\.Title\]='([^']*)'", where)
+        contains = m_contains.group(1) if m_contains else None
+        title = m_title.group(1) if m_title else None
         out = []
         for wid, it in self.items.items():
-            if not types or it["fields"]["System.WorkItemType"] in types:
+            matches_type = not types or it["fields"]["System.WorkItemType"] in types
+            matches_title = title is None or it["fields"]["System.Title"] == title
+            matches_contains = contains is None or contains in it["fields"]["System.Title"]
+            if matches_type and matches_title and matches_contains:
                 out.append(wid)
         return sorted(out)
 

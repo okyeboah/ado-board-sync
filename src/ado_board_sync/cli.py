@@ -39,6 +39,9 @@ def _build_parser():
     add("check-html", "Read-only, offline: verify every description converts to valid HTML")
     add("audit", "Read-only: verify the board matches the backlog (exit 1 on drift)")
     add("sync", "gen-csv -> import -> resync -> resync-tasks -> audit", go=True)
+    one = add("sync-one", "Create or update one Issue and set one Sprint; never changes Tasks or assignees", go=True)
+    one.add_argument("code", help="Issue code, for example DDI-1028")
+    one.add_argument("--sprint", required=True, help="Existing sprint iteration name")
 
     sp = add("sprints", "Create sprint iterations and assign Issues (+ Tasks) to them", go=True)
     sp.add_argument(
@@ -113,6 +116,8 @@ def main(argv=None):
         commands.resync(cfg, client, args)
         commands.resync_tasks(cfg, client, args)
         return commands.audit(cfg, client, args)
+    if args.cmd == "sync-one":
+        return commands.sync_one(cfg, client, args)
 
     return 1
 

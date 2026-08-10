@@ -183,6 +183,149 @@ class ClientResilienceTest(unittest.TestCase):
         self.assertEqual(mock_urlopen.call_count, 1)
         mock_sleep.assert_not_called()
 
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_patch_retries_on_transport_error_by_default(self, mock_sleep, mock_urlopen):
+        # client.patch() sets a fixed field value on a known work item -> idempotent, so the default
+        # safe_to_retry=True should survive a transient connection drop just like a GET does.
+        mock_urlopen.side_effect = [
+            urllib.error.URLError("connection reset"),
+            MockResponse(200, '{"id": 907}'),
+        ]
+
+        status, body = self.client.patch(
+            907, [{"op": "add", "path": "/fields/System.IterationPath", "value": "DemoProject\\Sprint 4"}]
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(body, {"id": 907})
+        self.assertEqual(mock_urlopen.call_count, 2)
+        mock_sleep.assert_called_once_with(0.01)
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_patch_retries_on_read_timeout(self, mock_sleep, mock_urlopen):
+        # TimeoutError is a subclass of OSError, the exact failure mode seen mid-cascade against a flaky
+        # connection: the request reached the server but the response read timed out.
+        mock_urlopen.side_effect = [
+            TimeoutError("The read operation timed out"),
+            MockResponse(200, '{"id": 907}'),
+        ]
+
+        status, body = self.client.patch(
+            907, [{"op": "add", "path": "/fields/System.AssignedTo", "value": "okyeboah@calbank.net"}]
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_patch_opts_out_of_retry_when_told_unsafe(self, mock_sleep, mock_urlopen):
+        # A hypothetical non-fixed-value patch (e.g. a relations array-append) must not be blindly retried.
+        mock_urlopen.side_effect = urllib.error.URLError("connection reset")
+
+        with self.assertRaises(urllib.error.URLError):
+            self.client.patch(907, [{"op": "add", "path": "/relations/-", "value": {}}], safe_to_retry=False)
+
+        self.assertEqual(mock_urlopen.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_create_is_unaffected_and_still_not_retried(self, mock_sleep, mock_urlopen):
+        # create() must keep its conservative default: a retried POST could create a duplicate work item.
+        mock_urlopen.side_effect = urllib.error.URLError("connection reset during POST")
+
+        with self.assertRaises(urllib.error.URLError):
+            self.client.create("Issue", [])
+
+        self.assertEqual(mock_urlopen.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_patch_retries_on_502_503_504(self, mock_sleep, mock_urlopen):
+        fp = io.BytesIO(b"Service Unavailable")
+        err = urllib.error.HTTPError(
+            "https://dev.azure.com/demo-org/_apis/wit/workitems/907",
+            503, "Service Unavailable", make_headers({}), fp
+        )
+        mock_urlopen.side_effect = [err, MockResponse(200, '{"id": 907}')]
+
+        status, body = self.client.patch(907, [{"op": "add", "path": "/fields/System.State", "value": "Done"}])
+
+        self.assertEqual(status, 200)
+        self.assertEqual(mock_urlopen.call_count, 2)
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_delete_retries_on_transport_error_by_default(self, mock_sleep, mock_urlopen):
+        # A repeat DELETE by known id after a dropped connection either re-succeeds or 404s -
+        # neither duplicates or corrupts anything, so it should retry like a GET does.
+        mock_urlopen.side_effect = [
+            urllib.error.URLError("connection reset"),
+            MockResponse(204, ""),
+        ]
+
+        status, body = self.client.delete(907)
+
+        self.assertEqual(status, 204)
+        self.assertEqual(mock_urlopen.call_count, 2)
+        mock_sleep.assert_called_once_with(0.01)
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_delete_opts_out_of_retry_when_told_unsafe(self, mock_sleep, mock_urlopen):
+        mock_urlopen.side_effect = urllib.error.URLError("connection reset")
+
+        with self.assertRaises(urllib.error.URLError):
+            self.client.delete(907, safe_to_retry=False)
+
+        self.assertEqual(mock_urlopen.call_count, 1)
+        mock_sleep.assert_not_called()
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_ensure_iteration_date_update_retries_on_transport_error(self, mock_sleep, mock_urlopen):
+        # GET (exists check) misses, POST (create) hits 409 (already exists), then the PATCH that
+        # syncs its dates must survive a transient connection drop -- this call used to bypass the
+        # Client.patch() fix entirely by calling self._req("PATCH", ...) directly.
+        fp = io.BytesIO(b'{"message": "already exists"}')
+        conflict = urllib.error.HTTPError(
+            "https://dev.azure.com/demo-org/_apis/wit/classificationnodes/iterations",
+            409, "Conflict", make_headers({}), fp
+        )
+        mock_urlopen.side_effect = [
+            MockResponse(404, ""),  # GET: node not cached/found yet
+            conflict,               # POST create: race, node already exists
+            urllib.error.URLError("connection reset"),  # PATCH attempt 1: transport drop
+            MockResponse(200, '{"identifier": "iter-guid-1"}'),  # PATCH attempt 2: succeeds
+        ]
+
+        ok, ident, note = self.client.ensure_iteration("Sprint 4", "2026-08-10", "2026-08-21")
+
+        self.assertTrue(ok)
+        self.assertEqual(ident, "iter-guid-1")
+        self.assertEqual(note, "exists; dates synced")
+        self.assertEqual(mock_urlopen.call_count, 4)
+
+    @patch("urllib.request.urlopen")
+    @patch("time.sleep")
+    def test_add_team_iteration_retries_on_transport_error(self, mock_sleep, mock_urlopen):
+        # Idempotent by ADO's own contract (400 = "already in team"), so a transport failure must
+        # not be left unretried either.
+        mock_urlopen.side_effect = [
+            urllib.error.URLError("connection reset"),
+            MockResponse(200, '{}'),
+        ]
+
+        ok, note = self.client.add_team_iteration("DemoProject Team", "iter-guid-1")
+
+        self.assertTrue(ok)
+        self.assertEqual(note, "added to team")
+        self.assertEqual(mock_urlopen.call_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

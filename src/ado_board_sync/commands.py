@@ -21,6 +21,75 @@ def gen_csv(cfg, args=None, items=None):
     return 0
 
 
+def sync_one(cfg, client, args):
+    """Create or update exactly one backlog Issue and set its fixed sprint path."""
+    code = args.code.upper()
+    if not cfg.issue_code_re.fullmatch(code):
+        print(f"FAIL {code}: code must match {cfg.code_prefix}-<digits>")
+        return 1
+    if args.sprint not in {item["name"] for item in cfg.iterations}:
+        print(f"FAIL {code}: sprint '{args.sprint}' is not in board.config.json")
+        return 1
+    current_epic = None
+    issue = None
+    for item in parser.parse_board(cfg):
+        if item["level"] == "epic":
+            current_epic = item
+        elif item["code"] == code:
+            issue = item
+            break
+    if issue is None or current_epic is None:
+        print(f"FAIL {code}: local backlog Issue was not found")
+        return 1
+
+    found = client.wiql(
+        f"[System.TeamProject]='{cfg.project}' AND [System.Title] CONTAINS '{code}'")
+    if len(found) > 1:
+        print(f"FAIL {code}: multiple board items match {found}")
+        return 1
+
+    description = htmlfmt.markdown_to_html(issue["desc_lines"])
+    iteration = f"{cfg.project}\\{args.sprint}"
+    operations = [
+        {"op": "add", "path": "/fields/System.Title", "value": issue["title"]},
+        {"op": "add", "path": "/fields/System.Description", "value": description},
+        {"op": "add", "path": "/fields/System.IterationPath", "value": iteration},
+    ]
+    if found:
+        item_id = found[0]
+        print(f"update only {code} #{item_id} -> {args.sprint}")
+        if not args.go:
+            return 0
+        status, result = client.patch(item_id, operations)
+        if status != 200:
+            print(f"FAIL {code}: update returned {status} {result}")
+            return 1
+    else:
+        epic_ids = client.wiql(
+            f"[System.TeamProject]='{cfg.project}' AND [System.WorkItemType]='{cfg.types['epic']}' "
+            f"AND [System.Title]='{current_epic['title']}'")
+        if len(epic_ids) != 1:
+            print(f"FAIL {code}: expected one parent Epic, found {epic_ids}")
+            return 1
+        operations.append({"op": "add", "path": "/relations/-", "value": client.parent_link(epic_ids[0])})
+        print(f"create only {code} under Epic #{epic_ids[0]} -> {args.sprint}")
+        if not args.go:
+            return 0
+        status, result = client.create(cfg.types["story"], operations)
+        if status not in (200, 201):
+            print(f"FAIL {code}: create returned {status} {result}")
+            return 1
+        item_id = result["id"]
+
+    status, result = client.get_item(item_id)
+    fields = result.get("fields", {}) if status == 200 else {}
+    if not _iteration_matches(fields.get("System.IterationPath"), iteration):
+        print(f"FAIL {code}: read-back iteration does not match {iteration}")
+        return 1
+    print(f"verified only {code} #{item_id} -> {fields['System.IterationPath']}")
+    return 0
+
+
 # --------------------------------------------------------------------------- #
 # import: create Epics/Issues missing from the board (idempotent)
 # --------------------------------------------------------------------------- #
@@ -215,31 +284,39 @@ def resync(cfg, client, args):
 # --------------------------------------------------------------------------- #
 # resync-tasks: reconcile each Issue's child Tasks to the backlog bullets
 # --------------------------------------------------------------------------- #
-def _issue_map(cfg, client):
+def _issue_map(cfg, client, extra_field=None):
+    """CODE -> issue_id, or CODE -> (issue_id, extra_field value) if ``extra_field`` is given."""
+    fields = ["System.Title"] + ([extra_field] if extra_field else [])
     ids = client.wiql(
         f"[System.TeamProject]='{cfg.project}' "
         f"AND [System.WorkItemType]='{cfg.types['story']}'"
     )
     out = {}
-    for w in client.get_items(ids, ["System.Title"]):
+    for w in client.get_items(ids, fields):
         m = cfg.issue_code_re.search(w["fields"]["System.Title"])
         if m:
-            out[m.group(1).upper()] = w["id"]
+            code = m.group(1).upper()
+            out[code] = (w["id"], w["fields"].get(extra_field)) if extra_field else w["id"]
     return out
 
 
-def _child_tasks(cfg, client, parent_id):
+def _child_tasks(cfg, client, parent_id, extra_field=None):
+    """{task_id: title}, or [(task_id, extra_field value)] if ``extra_field`` is given."""
     _, r = client.get_item(parent_id, expand="relations")
     child_ids = [
         int(rel["url"].split("/")[-1])
         for rel in r.get("relations", [])
         if rel.get("rel") == "System.LinkTypes.Hierarchy-Forward"
     ]
-    out = {}
+    fields = ["System.WorkItemType"] + [extra_field or "System.Title"]
+    out = {} if not extra_field else []
     if child_ids:
-        for w in client.get_items(child_ids, ["System.Title", "System.WorkItemType"]):
-            if w["fields"]["System.WorkItemType"] == cfg.types["task"]:
-                out[w["id"]] = w["fields"]["System.Title"]
+        for w in client.get_items(child_ids, fields):
+            if w["fields"].get("System.WorkItemType") == cfg.types["task"]:
+                if extra_field:
+                    out.append((w["id"], w["fields"].get(extra_field)))
+                else:
+                    out[w["id"]] = w["fields"]["System.Title"]
     return out
 
 
@@ -453,6 +530,14 @@ def _iteration_plan(cfg):
     return plan, code_sprint
 
 
+def _iteration_matches(current, desired):
+    """True if a work item's current System.IterationPath already equals ``desired``.
+    Unlike AssignedTo, IterationPath comes back as a plain string, not an identity object."""
+    if not current:
+        return False
+    return str(current).strip().lower() == desired.strip().lower()
+
+
 def sprints(cfg, client, args):
     if not cfg.iterations:
         print("No iterations configured. Add an 'iterations' array to board.config.json "
@@ -460,8 +545,8 @@ def sprints(cfg, client, args):
         return 1
 
     plan, code_sprint = _iteration_plan(cfg)
-    imap = _issue_map(cfg, client)              # read-only; safe in dry-run
-    board_codes = set(imap)
+    code_item = _issue_map(cfg, client, "System.IterationPath")   # read-only; safe in dry-run
+    board_codes = set(code_item)
     assigned_on_board = {c for c in code_sprint if c in board_codes}
     unknown = sorted(set(code_sprint) - board_codes)   # in config, not on board
     uncovered = sorted(board_codes - set(code_sprint))  # on board, no sprint
@@ -483,12 +568,47 @@ def sprints(cfg, client, args):
     if not unknown and not uncovered:
         print("Coverage OK: every board Issue maps to exactly one sprint.")
 
+    assign_only = getattr(args, "assign_only", False)
+    do_tasks = not getattr(args, "no_tasks", False)
+
+    # (code, issue_id, desired_path, issue_needs, [task_ids])
+    diff_plan = []
+    skipped = 0
+    for code in sorted(assigned_on_board):
+        pid, current_path = code_item[code]
+        name = code_sprint[code]
+        desired_path = f"{cfg.project}\\{name}"
+
+        if _iteration_matches(current_path, desired_path):
+            issue_needs = False
+            skipped += 1
+        else:
+            issue_needs = True
+
+        task_ids = []
+        if do_tasks:
+            for tid, tpath in _child_tasks(cfg, client, pid, "System.IterationPath"):
+                if _iteration_matches(tpath, desired_path):
+                    continue
+                task_ids.append(tid)
+
+        if issue_needs or task_ids:
+            diff_plan.append((code, pid, desired_path, issue_needs, task_ids))
+
+    n_issue = sum(1 for *_, needs, _ in diff_plan if needs)
+    n_task = sum(len(t) for *_, t in diff_plan)
+    print(f"\nIteration changes: {n_issue} issue(s), {n_task} task(s)"
+          + (f"; {skipped} already correct" if skipped else ""))
+    for code, pid, desired_path, issue_needs, task_ids in diff_plan:
+        if issue_needs:
+            tag = f"  [+{len(task_ids)} task(s)]" if task_ids else ""
+            print(f"  {code} (#{pid}) -> {desired_path}{tag}")
+        else:
+            print(f"  {code} (#{pid}): issue kept; {len(task_ids)} task(s) -> {desired_path}")
+
     if not args.go:
         print("\n(dry-run; pass --go to create sprints and assign work items)")
         return 0
-
-    assign_only = getattr(args, "assign_only", False)
-    do_tasks = not getattr(args, "no_tasks", False)
 
     if not assign_only:
         print("\nCreating / updating iteration nodes...")
@@ -507,49 +627,45 @@ def sprints(cfg, client, args):
         elif not team:
             print("\n(no team resolved; sprints created but not added to a team's sprint view)")
 
-    print("\nAssigning issues" + (" (+ cascading tasks)" if do_tasks else "") + "...")
-    ok = fail = task_ok = task_fail = 0
-    for code in sorted(assigned_on_board):
-        pid = imap[code]
-        name = code_sprint[code]
-        path = f"{cfg.project}\\{name}"
-        op = [{"op": "add", "path": "/fields/System.IterationPath", "value": path}]
-        st, r = client.patch(pid, op)
-        if st == 200:
-            ok += 1
-            if do_tasks:
-                for tid in _child_tasks(cfg, client, pid):
-                    st2, r2 = client.patch(tid, op)
-                    if st2 == 200:
-                        task_ok += 1
-                    else:
-                        task_fail += 1
-                        print(f"  FAIL task #{tid} of {code} -> {name}: {st2} {r2}")
+    def _reset_iteration(wid, label, indent):
+        reset_op = [{"op": "add", "path": "/fields/System.IterationPath", "value": cfg.project}]
+        st_reset, r_reset = client.patch(wid, reset_op)
+        if st_reset == 200:
+            print(f"{indent}Successfully reset {label} to {cfg.project}")
         else:
-            fail += 1
-            print(f"  FAIL issue {code} #{pid} -> {name}: {st} {r}")
-            if getattr(args, "reset_on_missing", False):
-                print(f"  Resetting issue {code} #{pid} to project root iteration...")
-                reset_op = [{"op": "add", "path": "/fields/System.IterationPath", "value": cfg.project}]
-                st_reset, r_reset = client.patch(pid, reset_op)
-                if st_reset == 200:
-                    print(f"    Successfully reset issue {code} #{pid} to {cfg.project}")
-                    if do_tasks:
-                        for tid in _child_tasks(cfg, client, pid):
-                            st_t_reset, r_t_reset = client.patch(tid, reset_op)
-                            if st_t_reset == 200:
-                                print(f"      Successfully reset task #{tid} to {cfg.project}")
-                            else:
-                                print(f"      FAIL task #{tid} reset: {st_t_reset} {r_t_reset}")
-                else:
-                    print(f"    FAIL issue {code} #{pid} reset: {st_reset} {r_reset}")
+            print(f"{indent}FAIL {label} reset: {st_reset} {r_reset}")
+
+    print("\nApplying...")
+    ok = fail = task_ok = task_fail = 0
+    reset_on_missing = getattr(args, "reset_on_missing", False)
+    for code, pid, desired_path, issue_needs, task_ids in diff_plan:
+        op = [{"op": "add", "path": "/fields/System.IterationPath", "value": desired_path}]
+        if issue_needs:
+            st, r = client.patch(pid, op)
+            if st == 200:
+                ok += 1
+            else:
+                fail += 1
+                print(f"  FAIL issue {code} #{pid} -> {desired_path}: {st} {r}")
+                if reset_on_missing:
+                    print(f"  Resetting issue {code} #{pid} to project root iteration...")
+                    _reset_iteration(pid, f"issue {code} #{pid}", "    ")
+        for tid in task_ids:
+            st2, r2 = client.patch(tid, op)
+            if st2 == 200:
+                task_ok += 1
+            else:
+                task_fail += 1
+                print(f"  FAIL task #{tid} of {code} -> {desired_path}: {st2} {r2}")
+                if reset_on_missing:
+                    _reset_iteration(tid, f"task #{tid}", "      ")
         time.sleep(0.02)
 
     print("\n" + "-" * 60)
     print(f"Issues assigned: {ok} ok, {fail} fail")
     if do_tasks:
         print(f"Tasks  assigned: {task_ok} ok, {task_fail} fail")
-    return 0 if fail == 0 else 1
+    return 0 if (fail == 0 and task_fail == 0) else 1
 
 
 # --------------------------------------------------------------------------- #

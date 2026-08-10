@@ -38,6 +38,47 @@ class CommandsTest(unittest.TestCase):
         commands.import_items(self.cfg, self.client, Args(go=False))
         self.assertEqual(len(self.client.items), 0)
 
+    # --- sync-one ---------------------------------------------------------
+    def _sync_one_args(self, go=True, code="PROJ-101", sprint="Sprint 1"):
+        return Args(go=go, code=code, sprint=sprint)
+
+    def test_sync_one_creates_only_the_requested_issue_with_its_sprint(self):
+        self.cfg.iterations = [{"name": "Sprint 1", "items": ["PROJ-101"]}]
+        epic = self.client.add_item("Epic", "Epic 1 — Platform Foundations")
+
+        self.assertEqual(commands.sync_one(self.cfg, self.client, self._sync_one_args()), 0)
+
+        issues = [item for item in self.client.items.values() if item["fields"]["System.WorkItemType"] == "Issue"]
+        self.assertEqual(1, len(issues))
+        self.assertEqual("PROJ-101 · Build the core event store", issues[0]["fields"]["System.Title"])
+        self.assertEqual("DemoProject\\Sprint 1", issues[0]["fields"]["System.IterationPath"])
+        self.assertEqual(epic, issues[0]["fields"]["System.Parent"])
+
+    def test_sync_one_updates_only_the_requested_issue(self):
+        self.cfg.iterations = [{"name": "Sprint 1", "items": ["PROJ-101"]}]
+        epic = self.client.add_item("Epic", "Epic 1 — Platform Foundations")
+        issue = self.client.add_item("Issue", "PROJ-101 · old", parent=epic)
+        other = self.client.add_item("Issue", "PROJ-102 · Keep", parent=epic)
+
+        self.assertEqual(commands.sync_one(self.cfg, self.client, self._sync_one_args()), 0)
+
+        self.assertEqual("PROJ-101 · Build the core event store", self.client.items[issue]["fields"]["System.Title"])
+        self.assertNotIn("System.IterationPath", self.client.items[other]["fields"])
+
+    def test_sync_one_dry_run_does_not_write(self):
+        self.cfg.iterations = [{"name": "Sprint 1", "items": ["PROJ-101"]}]
+        self.client.add_item("Epic", "Epic 1 — Platform Foundations")
+
+        self.assertEqual(commands.sync_one(self.cfg, self.client, self._sync_one_args(go=False)), 0)
+
+        self.assertEqual(1, len(self.client.items))
+
+    def test_sync_one_rejects_invalid_code_and_unknown_sprint(self):
+        self.cfg.iterations = [{"name": "Sprint 1", "items": ["PROJ-101"]}]
+
+        self.assertEqual(commands.sync_one(self.cfg, self.client, self._sync_one_args(code="bad")), 1)
+        self.assertEqual(commands.sync_one(self.cfg, self.client, self._sync_one_args(sprint="Sprint 9")), 1)
+
     def test_import_creates_epics_issues_and_hierarchy(self):
         commands.import_items(self.cfg, self.client, Args(go=True))
         self.assertEqual(len(self._titles_of_type("Epic")), 2)

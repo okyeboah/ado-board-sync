@@ -15,19 +15,14 @@ class Client:
         self.cfg = cfg
         self._auth = "Basic " + base64.b64encode(f":{pat}".encode()).decode()
 
-    def _req(self, method, url, body=None, ctype="application/json", timeout=None):
+    def _req(self, method, url, body=None, ctype="application/json", timeout=None, safe_to_retry=None):
         """Execute an HTTP request with built-in network resilience.
 
-        Idempotency Policy:
-        - Idempotent/Read requests (GET, or POST queries to `/wit/wiql`) are freely retried on both
-          transient transport/network failures (URLError, OSError, TimeoutError) and transient HTTP status
-          codes (429, 502, 503, 504).
-        - Non-idempotent/Write requests (creates, updates, deletes) are never auto-retried on transient
-          transport/network errors or 5xx status codes. This is because a connection drop or reset can occur
-          after the server successfully processes the mutation but before sending the response, leading to
-          duplicate resources or corrupted states. Non-idempotent writes are, however, safely retried on
-          HTTP 429 (Too Many Requests), where the request is guaranteed to have been rejected by the rate
-          limiter without side effects.
+        GET and WIQL POST are idempotent and always retried on transient transport errors and on
+        429/502/503/504. Every other method is retried only on 429 (rejected before any side effect)
+        unless the caller passes ``safe_to_retry=True`` — reserved for writes that produce the same
+        end state whether applied once or N times (e.g. a fixed-value field PATCH), never for writes
+        whose retried effect could differ from the first attempt (creates, array-append patches).
         """
         data = json.dumps(body).encode() if body is not None else None
 
@@ -37,8 +32,9 @@ class Client:
         if timeout is None:
             timeout = getattr(self.cfg, "timeout", 20)
 
-        # Check if the request is idempotent
+        # Auto-detect idempotency by method/url; an explicit safe_to_retry overrides the guess.
         is_idempotent = method == "GET" or (method == "POST" and "/wit/wiql" in url)
+        retriable = is_idempotent if safe_to_retry is None else safe_to_retry
         total_attempts = 1 + max_retries
 
         for attempt in range(total_attempts):
@@ -53,8 +49,8 @@ class Client:
                     return resp.status, (json.loads(raw) if raw else {})
             except urllib.error.HTTPError as e:
                 # HTTPError represents non-2xx HTTP responses.
-                # 429 is retriable for all requests; 502/503/504 are retriable only for idempotent ones.
-                is_retriable = e.code == 429 or (is_idempotent and e.code in (502, 503, 504))
+                # 429 is retriable for all requests; 502/503/504 are retriable only for idempotent/safe ones.
+                is_retriable = e.code == 429 or (retriable and e.code in (502, 503, 504))
                 if is_retriable and attempt < total_attempts - 1:
                     delay = None
                     if e.code == 429:
@@ -71,8 +67,8 @@ class Client:
                 else:
                     return e.code, e.read().decode()
             except (urllib.error.URLError, OSError) as e:
-                # Transient transport errors are retried only for idempotent requests
-                if is_idempotent and attempt < total_attempts - 1:
+                # Transient transport errors are retried only for idempotent/safe requests
+                if retriable and attempt < total_attempts - 1:
                     delay = backoff * (2 ** attempt)
                     time.sleep(delay)
                     continue
@@ -126,15 +122,32 @@ class Client:
         url = f"{cfg.base_url}/wit/workitems/{encoded}?api-version={cfg.api_version}"
         return self._req("POST", url, ops, ctype="application/json-patch+json")
 
-    def patch(self, wid, ops):
+    def patch(self, wid, ops, safe_to_retry=None):
+        """PATCH fields on an already-identified work item.
+
+        Retriable by default unless any op appends to an array (path ending in ``/-``, e.g.
+        ``/relations/-``) — that shape would duplicate on retry, so it's excluded automatically.
+        Pass ``safe_to_retry`` explicitly to override the auto-detection.
+        """
         cfg = self.cfg
         url = f"{cfg.org_url}/wit/workitems/{wid}?api-version={cfg.api_version}"
-        return self._req("PATCH", url, ops, ctype="application/json-patch+json")
+        if safe_to_retry is None:
+            safe_to_retry = all(not op.get("path", "").endswith("/-") for op in ops)
+        return self._req(
+            "PATCH", url, ops, ctype="application/json-patch+json", safe_to_retry=safe_to_retry
+        )
 
-    def delete(self, wid):
+    def delete(self, wid, safe_to_retry=True):
+        """DELETE an already-identified work item by id.
+
+        Defaults to retriable: a repeat DELETE after a dropped connection either succeeds again
+        (item wasn't actually removed yet) or 404s (it was) — neither creates a duplicate or a
+        corrupted state, unlike a retried create.
+        """
         cfg = self.cfg
         return self._req(
-            "DELETE", f"{cfg.org_url}/wit/workitems/{wid}?api-version={cfg.api_version}"
+            "DELETE", f"{cfg.org_url}/wit/workitems/{wid}?api-version={cfg.api_version}",
+            safe_to_retry=safe_to_retry,
         )
 
     def parent_link(self, parent_id):
@@ -170,7 +183,11 @@ class Client:
         if st in (200, 201):
             return True, (r.get("identifier") if isinstance(r, dict) else None), "created"
         if st == 409:  # node already exists -> PATCH to make its dates authoritative
-            st2, r2 = self._req("PATCH", f"{base}/{enc}?api-version={cfg.api_version}", body)
+            # A fixed-value {name, attributes} set on a known node, same idempotent shape as
+            # Client.patch()'s work-item field writes -> safe to retry on a transport failure.
+            st2, r2 = self._req(
+                "PATCH", f"{base}/{enc}?api-version={cfg.api_version}", body, safe_to_retry=True
+            )
             if st2 == 200:
                 return True, (r2.get("identifier") if isinstance(r2, dict) else None), "exists; dates synced"
             return False, None, f"update failed: {st2} {r2}"
@@ -199,7 +216,9 @@ class Client:
             f"https://dev.azure.com/{cfg.org}/{cfg.project}/{team_enc}"
             f"/_apis/work/teamsettings/iterations?api-version={cfg.api_version}"
         )
-        st, r = self._req("POST", url, {"id": identifier})
+        # Idempotent by ADO's own contract (see the 400 handling below), so a repeat call after a
+        # transport failure is harmless -> safe to retry.
+        st, r = self._req("POST", url, {"id": identifier}, safe_to_retry=True)
         if st in (200, 201):
             return True, "added to team"
         if st == 400:  # ADO returns 400 when the iteration is already selected
