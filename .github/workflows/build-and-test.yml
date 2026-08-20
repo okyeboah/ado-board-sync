@@ -1,0 +1,58 @@
+name: build-and-test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cli:
+    name: CLI (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The package declares requires-python >=3.8, so the oldest supported
+        # interpreter is tested alongside a current one.
+        python-version: ['3.9', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Run the CLI test suite
+        run: PYTHONPATH=src python -m unittest discover -s tests -t . -v
+
+  desktop:
+    name: Desktop (.NET)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Restore
+        run: dotnet restore desktop/AdoBoardSync.slnx
+
+      - name: Build
+        run: dotnet build desktop/AdoBoardSync.slnx --configuration Release --no-restore
+
+      # The parity suite shells out to the CLI's Python modules. It is the gate
+      # that keeps the .NET port from drifting from htmlfmt.py / parser.py /
+      # config.py, so it must run here rather than only on a developer machine.
+      - name: Test
+        run: dotnet test desktop/AdoBoardSync.slnx --configuration Release --no-build
+        env:
+          ADO_BOARD_SYNC_PYTHON: python
