@@ -4,20 +4,16 @@ A desktop companion to [`ado-board-sync`](../README.md): edit the Markdown backl
 
 ## Status
 
-The planning package is complete and the Core library has landed. The UI has not been started.
+**There is no runnable application yet.** The planning package is complete and the
+parity-critical Core has landed: configuration, credential resolution, backlog
+parsing, Markdown-to-HTML conversion, and markup validation. Nothing connects to a
+board and nothing renders — `AdoBoardSync.Infrastructure` and
+`AdoBoardSync.Desktop` do not exist.
 
-| Area | State |
-| --- | --- |
-| Product documents | Complete — PRD, FSD, Architecture, Design System, Backlog, GitHub Project blueprint |
-| Config loading (`ABSD-102`) | Implemented, parity-tested against `config.py` |
-| Backlog parser (`ABSD-201`) | Implemented, parity-tested against `parser.py` |
-| Markdown/HTML conversion (`ABSD-202`) | Implemented, parity-tested against `htmlfmt.py` |
-| Markup validation (part of `ABSD-203`) | Implemented, parity-tested against `htmlfmt.unbalanced` |
-| CSV export (`ABSD-204`) | Not started |
-| Credential store (`ABSD-103`) | Env var and token file done; OS credential store not started |
-| Connector, Plan/Apply, Audit, UI | Not started |
-
-Delivery tickets are tracked as GitHub issues labelled `app:desktop`.
+5 of 20 delivery tickets are Done, 3 Partial, 12 Not started.
+[docs/STATUS.md](docs/STATUS.md) is the per-ticket source of truth and carries the
+evidence for each; this section deliberately does not repeat it, so the two cannot
+disagree. Tickets are tracked as GitHub issues labelled `app:desktop`.
 
 ## Documents
 
@@ -26,6 +22,7 @@ Delivery tickets are tracked as GitHub issues labelled `app:desktop`.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Design system](docs/DESIGN-SYSTEM.md)
 - [Solution and delivery conventions](docs/CONVENTIONS.md)
+- [Delivery status](docs/STATUS.md) — what is built, with evidence
 - [Initial delivery backlog](docs/BACKLOG.md)
 - [Requirements traceability](docs/TRACEABILITY.md)
 - [MECE audit and repair record](docs/MECE-AUDIT.md)

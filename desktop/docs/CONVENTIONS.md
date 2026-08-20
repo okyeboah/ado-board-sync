@@ -56,6 +56,9 @@ Every project sets `TreatWarningsAsErrors`. A warning fails the build.
    change that moves a criterion from Open to Covered.
 7. A ticket with neither an acceptance criterion nor a named enabling gate in
    `docs/TRACEABILITY.md` is not ready to start.
+8. Record the ticket in `docs/STATUS.md` in the same change that moves it, and
+   close its GitHub issue only when that row reads Done. A ticket whose Outcome
+   names two deliverables needs a gate for each; "mostly working" is Partial.
 
 ## Parity is the load-bearing rule
 

@@ -45,10 +45,16 @@ behaviour on their own. Their gate is named explicitly so "no AC" never means
 
 | Ticket | Gate |
 | --- | --- |
-| ABSD-101 Solution and conventions | `dotnet build` succeeds with `TreatWarningsAsErrors` on every project. |
-| ABSD-102 Config loader | `BoardConfigParityTests.*` — four scenarios matching `config.py`'s resolution. **Met.** |
+| ABSD-101 Solution and conventions | `dotnet build` succeeds with `TreatWarningsAsErrors` on every project. **Met.** |
+| ABSD-102 Config loader and schema validation | Two gates, because the ticket names two things: `BoardConfigParityTests.*` for resolution matching `config.py`, and `BoardConfigSchemaTests.*` for the constraints in `board.config.schema.json` that a deserialize does not enforce. **Both met.** |
 | ABSD-301 Azure DevOps connector | Contract tests against a fixture connector; no live Azure DevOps call in any test. |
 | ABSD-505 Continuous integration | `.github/workflows/build-and-test.yml` runs the CLI suite and the .NET build, unit, and parity suites on a clean checkout. **Met.** |
+
+An earlier revision of this file marked ABSD-102 **Met** on the parity tests
+alone, while the schema validation its Outcome names did not exist. A gate that
+covers part of a ticket and is recorded as covering all of it is worse than no
+gate, so a ticket whose Outcome names more than one deliverable now lists one
+gate per deliverable. `STATUS.md` is the per-ticket view.
 
 ## Coverage today
 
