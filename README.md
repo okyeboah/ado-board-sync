@@ -14,6 +14,14 @@ to match it.
   `System.LinkTypes.Hierarchy` links, so moving between Basic, Agile, and Scrum
   only means changing the type *names* in `types`.
 
+## Desktop app
+
+A desktop companion app is planned: a backlog Markdown editor with a live
+preview of the rendered Azure DevOps description, and a visual plan/apply
+flow over the same CLI semantics. It is in the planning stage — see
+[desktop/README.md](desktop/README.md) for the PRD, FSD, architecture,
+design system, and delivery backlog.
+
 ## Install
 
 ```bash
@@ -107,7 +115,7 @@ it. `board.config.schema.json` documents and validates the structure.
 | `team` | no | `null` | Team whose sprint view iterations are added to; `null` auto-detects `<Project> Team` |
 | `iterations` | no | `[]` | Sprints for the `sprints` command (see below) |
 | `assignees` | no | `{}` | Owners for the `assign` command (see below) |
-| `max_retries` | no | `0` | Maximum number of retries for idempotent REST client requests |
+| `max_retries` | no | `3` | Maximum number of retries for idempotent REST client requests |
 | `backoff` | no | `1.5` | Base exponential-ish backoff sleep duration in seconds |
 | `timeout` | no | `20` | REST client request timeout in seconds |
 
@@ -173,7 +181,7 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 | `gen-csv` | Parse the backlog and (re)write the import CSV |
 | `import` | Create Epics/Issues that are missing from the board (idempotent) |
 | `resync` | Update Epic/Issue titles + descriptions to match the backlog |
-| `resync-tasks` | Add/delete each Issue's child Tasks to match the backlog bullets |
+| `resync-tasks [CODE]` | Add/delete each Issue's child Tasks to match the backlog bullets. Pass an Issue code (e.g. `resync-tasks PROJ-101`) to reconcile only that Issue's Tasks |
 | `close-children` | Close every open descendant of a work item already Done — Epic → Issue → Task, at any depth (Azure DevOps doesn't cascade state downward). `--assign-from-parent` also copies the done ancestor's assignee onto each closed item that is currently unassigned (never overwrites an existing assignee) |
 | `dedup` | Delete duplicate work items (same code, or same title under one parent) |
 | `check-html` | Read-only, offline check that every description converts to valid HTML; exit 1 on malformed markup. Needs no PAT and no network |

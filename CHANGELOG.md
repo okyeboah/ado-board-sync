@@ -2,6 +2,35 @@
 
 All notable changes to `ado-board-sync`. Versions follow [semantic versioning](https://semver.org/).
 
+## Unreleased
+
+### Added
+
+- `resync-tasks` takes an optional Issue code, so `resync-tasks PROJ-101 --go`
+  reconciles one Issue's Tasks instead of the whole board. Without it, syncing one
+  ticket also applied every other ticket's pending bullets, which pushed people
+  towards one-off scripts.
+- A desktop companion application under `desktop/`. This release carries the
+  planning package and a parity-verified Core library: the config loader, backlog
+  parser, Markdown-to-HTML conversion, and markup validator ported to .NET 10 and
+  compared against the Python modules on every build. The UI is not started.
+- Continuous integration. Every push and pull request runs the CLI suite on
+  Python 3.9 and 3.13, and the desktop build, unit, and parity suites.
+
+### Changed
+
+- `sync-one` scopes its lookup to the Issue work-item type. A Task that cites
+  another ticket's code in its own title — "…surfaced to monitoring (PROJ-101)" —
+  matched the unscoped `CONTAINS`, so the command reported the cited ticket as
+  ambiguous and it became unsyncable.
+- `resync-tasks` scoped to one code now queries only that Issue instead of reading
+  every Issue on the board to look one up.
+
+### Fixed
+
+- The `max_retries` default is documented as `3`, which is what the code has
+  always used. The README said `0`.
+
 ## 0.2.0
 
 ### Added

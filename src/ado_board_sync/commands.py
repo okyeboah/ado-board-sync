@@ -42,8 +42,12 @@ def sync_one(cfg, client, args):
         print(f"FAIL {code}: local backlog Issue was not found")
         return 1
 
+    # Scoped to the Issue type. A Task may cite another ticket's code in its own title —
+    # "Rate-limit rejections are logged and surfaced to monitoring (DDI-803)" is a DDI-805
+    # task — and an unscoped CONTAINS matched it, so the cited ticket became unsyncable.
     found = client.wiql(
-        f"[System.TeamProject]='{cfg.project}' AND [System.Title] CONTAINS '{code}'")
+        f"[System.TeamProject]='{cfg.project}' AND [System.WorkItemType]='{cfg.types['story']}' "
+        f"AND [System.Title] CONTAINS '{code}'")
     if len(found) > 1:
         print(f"FAIL {code}: multiple board items match {found}")
         return 1
@@ -284,19 +288,26 @@ def resync(cfg, client, args):
 # --------------------------------------------------------------------------- #
 # resync-tasks: reconcile each Issue's child Tasks to the backlog bullets
 # --------------------------------------------------------------------------- #
-def _issue_map(cfg, client, extra_field=None):
-    """CODE -> issue_id, or CODE -> (issue_id, extra_field value) if ``extra_field`` is given."""
+def _issue_map(cfg, client, extra_field=None, code=None):
+    """CODE -> issue_id, or CODE -> (issue_id, extra_field value) if ``extra_field`` is given.
+
+    ``code``, if given, scopes the query to Issues whose title contains it, instead of
+    reading every Issue on the board just to look up one.
+    """
     fields = ["System.Title"] + ([extra_field] if extra_field else [])
-    ids = client.wiql(
+    wiql = (
         f"[System.TeamProject]='{cfg.project}' "
         f"AND [System.WorkItemType]='{cfg.types['story']}'"
     )
+    if code:
+        wiql += f" AND [System.Title] CONTAINS '{code}'"
+    ids = client.wiql(wiql)
     out = {}
     for w in client.get_items(ids, fields):
         m = cfg.issue_code_re.search(w["fields"]["System.Title"])
         if m:
-            code = m.group(1).upper()
-            out[code] = (w["id"], w["fields"].get(extra_field)) if extra_field else w["id"]
+            found = m.group(1).upper()
+            out[found] = (w["id"], w["fields"].get(extra_field)) if extra_field else w["id"]
     return out
 
 
@@ -322,7 +333,16 @@ def _child_tasks(cfg, client, parent_id, extra_field=None):
 
 def resync_tasks(cfg, client, args):
     bullets = parser.tasks_by_code(cfg)
-    imap = _issue_map(cfg, client)
+    # Optional single-Issue scope. Without it the command reconciles the whole board, so
+    # syncing one ticket's Tasks also applied every other ticket's pending bullets — which
+    # is more than the caller asked for, and pushed people towards one-off scripts instead.
+    only = (getattr(args, "code", None) or "").upper()
+    if only:
+        if only not in bullets:
+            print(f"FAIL {only}: no Task bullets for that code in the local backlog")
+            return 1
+        bullets = {only: bullets[only]}
+    imap = _issue_map(cfg, client, code=only or None)
     tmax = cfg.task_title_max
 
     plan = []  # (code, parent_id, [add_bullets], [(del_id, del_title)])

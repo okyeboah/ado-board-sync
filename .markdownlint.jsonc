@@ -1,7 +1,13 @@
 {
-  // Whitespace and structure rules stay on. The rule below conflicts with the
+  // Whitespace and structure rules stay on. The rules below conflict with the
   // intended style of these documents:
   "default": true,
-  "MD013": false // line-length: the command, config, and backlog-format tables
-                 //   are wide on purpose; wrapping them hurts readability
+  "MD013": false, // line-length: the command, config, and backlog-format tables
+                  //   are wide on purpose; wrapping them hurts readability
+  "MD024": {
+    // no-duplicate-heading: a changelog repeats Added/Changed/Fixed under every
+    // version by design. Restricting the rule to siblings still catches a real
+    // duplicate within one section.
+    "siblings_only": true
+  }
 }

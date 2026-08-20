@@ -73,6 +73,43 @@ class CommandsTest(unittest.TestCase):
 
         self.assertEqual(1, len(self.client.items))
 
+    def test_sync_one_ignores_a_task_that_cites_the_code_in_its_own_title(self):
+        """A Task may cite another ticket's code.
+
+        "Rate-limit rejections are logged and surfaced to monitoring (DDI-803)" is a
+        DDI-805 task. An unscoped CONTAINS matched it alongside the real Issue, the
+        command refused as ambiguous, and the cited ticket became unsyncable.
+        """
+        self.cfg.iterations = [{"name": "Sprint 1", "items": ["PROJ-101"]}]
+        epic = self.client.add_item("Epic", "Epic 1 — Platform Foundations")
+        issue = self.client.add_item("Issue", "PROJ-101 · old", parent=epic)
+        self.client.add_item("Task", "Emit rejections to monitoring (PROJ-101)", parent=epic)
+
+        self.assertEqual(commands.sync_one(self.cfg, self.client, self._sync_one_args()), 0)
+
+        self.assertEqual("PROJ-101 · Build the core event store", self.client.items[issue]["fields"]["System.Title"])
+        self.assertEqual("DemoProject\\Sprint 1", self.client.items[issue]["fields"]["System.IterationPath"])
+
+    def test_resync_tasks_scoped_to_one_code_leaves_other_issues_alone(self):
+        """Without a scope the command reconciles the whole board.
+
+        Syncing one ticket's Tasks then also applied every other ticket's pending
+        bullets, which is more than a caller asking for one ticket wants.
+        """
+        epic = self.client.add_item("Epic", "Epic 1 — Platform Foundations")
+        self.client.add_item("Issue", "PROJ-101 · Build the core event store", parent=epic)
+        self.client.add_item("Issue", "PROJ-102 · Something else", parent=epic)
+
+        self.assertEqual(commands.resync_tasks(self.cfg, self.client, Args(go=True, code="PROJ-101")), 0)
+
+        parents = {item["fields"].get("System.Parent")
+                   for item in self.client.items.values()
+                   if item["fields"]["System.WorkItemType"] == "Task"}
+        self.assertEqual(1, len(parents))
+
+    def test_resync_tasks_rejects_a_code_with_no_backlog_bullets(self):
+        self.assertEqual(commands.resync_tasks(self.cfg, self.client, Args(go=True, code="PROJ-999")), 1)
+
     def test_sync_one_rejects_invalid_code_and_unknown_sprint(self):
         self.cfg.iterations = [{"name": "Sprint 1", "items": ["PROJ-101"]}]
 

@@ -29,7 +29,11 @@ def _build_parser():
     add("gen-csv", "Generate the import CSV from the backlog Markdown")
     add("import", "Create Epics/Issues that are missing from the board", go=True)
     add("resync", "Resync Epic/Issue titles + descriptions from the CSV", go=True)
-    add("resync-tasks", "Reconcile each Issue's child Tasks to backlog bullets", go=True)
+    rt = add("resync-tasks", "Reconcile each Issue's child Tasks to backlog bullets", go=True)
+    rt.add_argument(
+        "code", nargs="?",
+        help="reconcile only this Issue's Tasks, for example DDI-803 (default: every Issue)",
+    )
     cc = add("close-children", "Set child Tasks to Done for every Issue already Done", go=True)
     cc.add_argument(
         "--assign-from-parent", action="store_true",
