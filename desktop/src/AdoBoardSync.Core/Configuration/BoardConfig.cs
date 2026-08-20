@@ -117,6 +117,13 @@ public sealed class BoardConfig
 
     public static Result<BoardConfig> Parse(string json, string baseDirectory)
     {
+        // Schema first, on the raw document: a mistyped key does not survive
+        // deserialization, so by the time there is a typed object the evidence is gone.
+        if (BoardConfigSchema.Validate(json) is { } violation)
+        {
+            return violation;
+        }
+
         BoardConfigData? data;
         try
         {

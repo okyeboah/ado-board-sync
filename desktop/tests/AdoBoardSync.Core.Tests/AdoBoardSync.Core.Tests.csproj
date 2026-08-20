@@ -20,6 +20,9 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AdoBoardSync.Core\AdoBoardSync.Core.csproj" />
+    <!-- For RepoPaths: the schema tests read the real board.config.schema.json so a
+         key added there without being added to the validator fails the build. -->
+    <ProjectReference Include="..\AdoBoardSync.TestKit\AdoBoardSync.TestKit.csproj" />
   </ItemGroup>
 
 </Project>
