@@ -24,7 +24,7 @@ A ticket is never Done because most of it works. If the row needs the word
 | ABSD-101 Solution and conventions | Done | `AdoBoardSync.slnx`, `docs/CONVENTIONS.md`; every project builds with `TreatWarningsAsErrors`. |
 | ABSD-102 Config loader and schema validation | Done | `BoardConfig` + `BoardConfigSchema`; 4 parity scenarios against `config.py`, 25 schema tests, and a guard that fails the build if `board.config.schema.json` gains a key the validator does not know. |
 | ABSD-103 Credential resolution and OS credential store | Partial | `PatResolver` resolves `pat_env` then `pat_file`, matching the CLI. **Remaining:** the operating-system credential store, which needs `AdoBoardSync.Infrastructure`. |
-| ABSD-201 Backlog parser | Done | `BacklogParser`; `BacklogParserParityTests` compares the parsed tree and tasks-by-code against `parser.py`. |
+| ABSD-201 Backlog parser | Done | `BacklogParser`; `BacklogParserParityTests` compares the parsed tree and tasks-by-code against `parser.py`, including three custom `epic_heading_regex` scenarios and three relative-path scenarios. |
 | ABSD-202 Markdown-to-HTML conversion | Done | `MarkdownHtml`; `MarkdownHtmlParityTests` compares HTML, plain, inline, and norm against `htmlfmt.py`. |
 | ABSD-203 Split-pane editor with live preview | Partial | `HtmlBalance` implements the validation half, parity-checked against `htmlfmt.unbalanced`. **Remaining:** the editor, the preview pane, and inline markers — all of the UI. No Avalonia code exists. |
 | ABSD-204 CSV export | Not started | — |
@@ -37,7 +37,7 @@ A ticket is never Done because most of it works. If the row needs the word
 | ABSD-403 Close-children review and apply | Not started | — |
 | ABSD-501 Operation history store | Not started | — |
 | ABSD-502 Multi-profile registry and switching | Not started | — |
-| ABSD-503 End-to-end parity and acceptance suite | Partial | The parity half exists: 43 comparisons against the live Python modules. **Remaining:** the acceptance half — proving each PRD criterion against a fixture organisation. |
+| ABSD-503 End-to-end parity and acceptance suite | Partial | The parity half exists: 68 comparisons against the live Python modules, plus `ParityCoverageTests`, which fails when a config key or documented Markdown construct has no scenario behind it. **Remaining:** the acceptance half — proving each PRD criterion against a fixture organisation. |
 | ABSD-504 External backlog and config change detection | Not started | — |
 | ABSD-505 Continuous integration | Done | `.github/workflows/build-and-test.yml`; green on `main`, running the CLI suite on Python 3.9 and 3.13 and the desktop build, unit, and parity suites. |
 | ABSD-601 Installable desktop package | Not started | — |

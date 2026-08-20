@@ -59,6 +59,33 @@ Every delivery ticket now maps to either a PRD acceptance criterion or a named
 enabling gate in `docs/TRACEABILITY.md`, and every acceptance criterion maps to a
 ticket. No ticket appears under two epics.
 
+## Round 2 — delivery tracking, 2026-08-20
+
+Audited how completion is recorded, after "are the issues complete?" turned out to
+have no answerable source.
+
+| # | Severity | Finding | Repair |
+| --- | --- | --- | --- |
+| 11 | Critical gap | No per-ticket status existed. `TRACEABILITY.md` tracks whether a requirement is tested, not whether a ticket is built, and GitHub showed 26 identical OPEN. | Added `STATUS.md` as the single per-ticket answer, with evidence per row. |
+| 12 | Critical gap | `TRACEABILITY.md` recorded ABSD-102's gate as **Met** while the schema validation its Outcome names did not exist. | Implemented the validation, and split the gate so a ticket naming two deliverables carries one gate per deliverable. |
+| 13 | Overlap | "Met", "Covered", and a README status table described completion in three vocabularies, free to drift. | One vocabulary in `STATUS.md`; the README now links rather than repeats. |
+| 14 | Minor gap | ABSD-103 and ABSD-203 each bundle a delivered half and an undelivered half with no way to record that. | Added the `status:partial` label and a comment naming what remains on each. |
+
+## Round 3 — verification coverage, 2026-08-20
+
+Audited whether the parity suite is collectively exhaustive over what it claims to
+verify. A parity suite reports green for the inputs it happens to feed, so an
+unexamined construct is indistinguishable from a verified one.
+
+| # | Severity | Finding | Repair |
+| --- | --- | --- | --- |
+| 15 | Critical gap | `epic_heading_regex` — the only place a caller-supplied regex reaches the parser, and the sole reason `PythonCompat.MatchAtStart` exists — had no parity scenario. That code path was never compared against Python. | Added the `custom-epic-heading.md` fixture with a mid-line trap and three scenarios: anchored, unanchored, and no trailing anchor. Removing the anchoring guard now fails two of them. |
+| 16 | Gap | Relative path resolution for `board_file` and `csv_file` was unit-tested against our own expectation, never against Python's `normpath(join(...))`. | Added three relative-path parity scenarios, including `..` segments. |
+| 17 | Gap | Nothing prevented a future key or construct from arriving without a scenario. | `ParityCoverageTests` fails when a schema key or a documented Markdown construct has no scenario behind it. |
+
+Markdown construct coverage was checked and found complete: all 15 documented
+constructs appear in a fixture.
+
 ## Standing rule
 
 Re-run this audit whenever a release slice closes, or whenever a ticket is added
