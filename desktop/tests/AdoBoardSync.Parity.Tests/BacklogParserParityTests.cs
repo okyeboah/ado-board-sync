@@ -60,6 +60,59 @@ public class BacklogParserParityTests
         }
     }
 
+    [Theory]
+    // Anchored, the ordinary form.
+    [InlineData(@"^##\s+(Theme\b.*)$")]
+    // Unanchored. Python's re.match still refuses a mid-line match because it
+    // anchors at position 0; .NET's Match searches and would find "## Theme B" at
+    // index 10 in the fixture's trap line, turning description into an Epic. This
+    // is the case PythonCompat.MatchAtStart exists for, and the only place a
+    // caller-supplied pattern reaches the parser.
+    [InlineData(@"##\s+(Theme\b.*)$")]
+    // No trailing anchor either, and a character class, to exercise more of the
+    // shared regex surface between the two engines.
+    [InlineData(@"##[ \t]+(Theme.*)")]
+    public void ACustomEpicHeadingRegexMatchesThePythonImplementation(string epicHeadingRegex)
+    {
+        var backlog = RepoPaths.Fixture(Fixtures.Backlog, "custom-epic-heading.md");
+        using var profile = TempBoardProfile.Create(
+            backlog,
+            config => config["epic_heading_regex"] = epicHeadingRegex);
+
+        using var reference = PythonReference.WithConfig("parse", profile.ConfigPath);
+        var config = BoardConfig.Load(profile.ConfigPath);
+        Assert.True(config.IsSuccess, config.Error?.SafeMessage);
+
+        var actual = BacklogParser.Parse(config.Value, File.ReadAllText(backlog));
+
+        Assert.Equal(Canonical(reference.RootElement.GetProperty("items")), Canonical(actual));
+    }
+
+    [Theory]
+    [InlineData("docs/backlog.md", "build/work-items.csv")]
+    [InlineData("./docs/backlog.md", "./build/out.csv")]
+    [InlineData("docs/../docs/backlog.md", "build/nested/../out.csv")]
+    public void RelativePathsResolveTheSameWayAsThePythonImplementation(string boardFile, string csvFile)
+    {
+        // Python joins against the config's directory and normpaths the result;
+        // .NET combines and GetFullPaths it. Both are lexical, but that was assumed
+        // rather than compared until now.
+        using var profile = TempBoardProfile.Create(
+            RepoPaths.Fixture(Fixtures.Backlog, "standard.md"),
+            config =>
+            {
+                config["board_file"] = boardFile;
+                config["csv_file"] = csvFile;
+            });
+
+        using var reference = PythonReference.WithConfig("config", profile.ConfigPath);
+        var config = BoardConfig.Load(profile.ConfigPath);
+        Assert.True(config.IsSuccess, config.Error?.SafeMessage);
+
+        Assert.Equal(reference.RootElement.GetProperty("board_file").GetString(), config.Value.BoardFile);
+        Assert.Equal(reference.RootElement.GetProperty("csv_file").GetString(), config.Value.CsvFile);
+    }
+
     /// <summary>
     /// Renders either side's items as one canonical JSON string, so a failure shows
     /// the differing item rather than "two object graphs are not equal".
