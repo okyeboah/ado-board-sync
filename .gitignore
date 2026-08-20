@@ -12,6 +12,12 @@ build/
 dist/
 *.egg-info/
 
+# .NET (desktop app)
+bin/
+obj/
+*.user
+TestResults/
+
 # Local presentation — not part of the package
 presentation.html
 
