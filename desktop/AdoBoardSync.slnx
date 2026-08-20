@@ -4,5 +4,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AdoBoardSync.Core.Tests/AdoBoardSync.Core.Tests.csproj" />
+    <Project Path="tests/AdoBoardSync.Parity.Tests/AdoBoardSync.Parity.Tests.csproj" />
+    <Project Path="tests/AdoBoardSync.TestKit/AdoBoardSync.TestKit.csproj" />
   </Folder>
 </Solution>
