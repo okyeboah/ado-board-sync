@@ -2,4 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/AdoBoardSync.Core/AdoBoardSync.Core.csproj" />
   </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AdoBoardSync.Core.Tests/AdoBoardSync.Core.Tests.csproj" />
+  </Folder>
 </Solution>
