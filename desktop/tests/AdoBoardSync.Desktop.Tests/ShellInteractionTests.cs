@@ -229,6 +229,19 @@ public class ShellInteractionTests
             Assert.NotNull(model.Profiles);
             UiHarness.Pump();
 
+            // Say why, not just that. This collection can come back without the
+            // profile for three reasons that "filter not matched" cannot tell
+            // apart: the profile never loaded, the registry refused the entry, or
+            // something threw on the way. Asserting both messages first means a red
+            // run on a machine nobody can reach names its own cause -- which is
+            // what this test failed to do on the ubuntu runner while every macOS
+            // run stayed green.
+            // Asserted as True-with-message rather than Null: the point is to read the
+            // reason off a runner nobody can attach to, and Assert.Null reports only
+            // "Value is not null", which names the assertion instead of the cause.
+            Assert.True(model.ErrorText is null, model.ErrorText);
+            Assert.True(model.Profiles!.ErrorText is null, model.Profiles!.ErrorText);
+
             var switcher = UiHarness.Only<ComboBox>(window, box => box.Name == "ProfileSwitcher", "the switcher");
 
             Assert.Contains(
@@ -236,6 +249,103 @@ public class ShellInteractionTests
                 row => string.Equals(row.ConfigPath, profile.ConfigPath, StringComparison.Ordinal));
             Assert.Equal(model.Profiles.Profiles.Count, switcher.ItemCount);
             Assert.Same(model.Profiles.ActiveProfile, switcher.SelectedItem);
+
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void TheAgentPaneOpensAndStatesWhatItWillRunBeforeItRunsAnything()
+    {
+        // ABSD-703. The three disclosures are on screen while the user is deciding,
+        // not behind a tooltip — they are about to hand a local binary a directory.
+        UiHarness.OnUiThread(() =>
+        {
+            using var profile = Standard();
+            var window = OpenProfile(profile);
+            var model = Model(window);
+
+            Assert.NotNull(model.Agent);
+
+            model.CurrentSectionIndex = 6;
+            UiHarness.Pump();
+
+            Assert.True(model.ShowAgent);
+            Assert.False(model.ShowPlanned);
+
+            foreach (var statement in new[]
+                     {
+                         model.Agent!.ProviderStatement,
+                         model.Agent.ReadStatement,
+                         model.Agent.ChangeStatement,
+                     })
+            {
+                Assert.True(
+                    UiHarness.ShowsText(window, statement),
+                    $"The pane did not show: {statement}");
+            }
+
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void TheAgentPaneWillNotRunWithoutAPromptAndScopesItselfToTheSelection()
+    {
+        UiHarness.OnUiThread(() =>
+        {
+            using var profile = Standard();
+            var window = OpenProfile(profile);
+            var model = Model(window);
+
+            model.CurrentSectionIndex = 6;
+            UiHarness.Pump();
+
+            // No prompt yet, so the run button is disabled rather than absent —
+            // a user needs to see what they have not filled in.
+            var run = UiHarness.Button(window, "Run the agent");
+            Assert.False(run.IsEnabled);
+
+            // The rail's selection is the agent's scope, so the sentence describes
+            // the item the user is looking at rather than the whole backlog.
+            var issue = model.Nodes[0].Children[0];
+            model.SelectedNode = issue;
+            UiHarness.Pump();
+
+            Assert.Equal(Core.Agents.AgentScope.Issue, model.Agent!.Scope);
+            Assert.Contains(
+                issue.Item.Code!, model.Agent.ScopeStatement, StringComparison.Ordinal);
+            Assert.True(UiHarness.ShowsText(window, model.Agent.ScopeStatement));
+
+            window.Close();
+        });
+    }
+
+    [Fact]
+    public void TheAgentPaneOffersNoPathToTheBoardOfItsOwn()
+    {
+        // ABSD-705, checked at the surface. The only board-facing control is the
+        // request that opens the Plan, and it is not offered until an edit has been
+        // accepted — there is nothing new to plan before that.
+        UiHarness.OnUiThread(() =>
+        {
+            using var profile = Standard();
+            var window = OpenProfile(profile);
+            var model = Model(window);
+
+            model.CurrentSectionIndex = 6;
+            UiHarness.Pump();
+
+            var captions = UiHarness.All<Button>(window)
+                .Where(UiHarness.IsShown)
+                .Select(button => button.Content as string)
+                .Where(caption => caption is not null)
+                .ToList();
+
+            Assert.Contains("Run the agent", captions);
+            Assert.DoesNotContain(captions, caption => caption!.Contains("Apply", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain("Generate a Plan", captions);
+            Assert.False(model.Agent!.CanPlan);
 
             window.Close();
         });

@@ -31,7 +31,8 @@ public sealed record ShellSurfaces(
     SprintPlanningViewModel Sprints,
     AssigneePlanningViewModel Assignees,
     HistoryViewModel? History = null,
-    ProfileRegistryViewModel? Profiles = null)
+    ProfileRegistryViewModel? Profiles = null,
+    AgentAuthoringViewModel? Agent = null)
 {
     /// <summary>
     /// Surfaces with no injected collaborators, for a test whose subject is
@@ -74,6 +75,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowSprints))]
     [NotifyPropertyChangedFor(nameof(ShowAssignees))]
     [NotifyPropertyChangedFor(nameof(ShowHistory))]
+    [NotifyPropertyChangedFor(nameof(ShowAgent))]
     [NotifyPropertyChangedFor(nameof(ShowPlanned))]
     private int _currentSectionIndex;
 
@@ -99,6 +101,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     [ObservableProperty]
     private bool _hasUnsavedEdits;
+
+    /// <summary>
+    ///     True once the backlog file on disk no longer matches what this profile was
+    ///     opened from (ABSD-504). Set by <see cref="CheckForExternalChangeAsync" />
+    ///     and cleared only by a reload — this is the "requires an explicit reload
+    ///     before continuing" half of PRD-AC-15, the half the save-time guard cannot
+    ///     provide because it only fires once the user has already done the work.
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ExternalChangeText))]
+    private bool _isStale;
 
     [ObservableProperty]
     private string _codePrefix = string.Empty;
@@ -160,6 +173,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// <summary>The known board profiles, and which one is open (ABSD-502).</summary>
     public ProfileRegistryViewModel? Profiles { get; }
 
+    /// <summary>
+    ///     The agent-authoring surface (ABSD-703 through ABSD-706). Null when no
+    ///     agent session was supplied, and the section then reports itself
+    ///     unavailable rather than offering to run a binary this build cannot find.
+    /// </summary>
+    public AgentAuthoringViewModel? Agent { get; }
+
     private readonly ProfileLoader _loader;
 
     /// <summary>
@@ -190,6 +210,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Assignees = surfaces.Assignees;
         History = surfaces.History;
         Profiles = surfaces.Profiles;
+        Agent = surfaces.Agent;
 
         Sections =
         [
@@ -211,6 +232,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
             new("History", "⟲", History is not null,
                 "Every Apply this machine has run.",
                 "Needs the operation history store, which this build was started without."),
+            new("Agent", "✦", Agent is not null,
+                "Ask a local agent CLI to draft a change, and review it as a diff.",
+                "Needs the agent edit session, which this build was started without."),
         ];
 
         // Saving an iteration or an assignee rewrites board.config.json, so the
@@ -228,6 +252,24 @@ public sealed partial class MainWindowViewModel : ObservableObject
             Profiles.ActiveProfileChanged += OnActiveProfileChangedAsync;
         }
 
+        if (Agent is not null)
+        {
+            // An accepted edit changed the backlog file underneath us. Re-opening
+            // is what makes the tree, the preview and the Plan describe the file
+            // that is now on disk rather than the one the agent started from.
+            Agent.EditAccepted = _ => ReloadAfterAgentEdit();
+
+            // The same handoff the Audit surface has, and for the same reason: an
+            // agent's involvement removes no step from the Plan/Apply gate. This
+            // opens the Plan surface and nothing more — no plan, no approval
+            // (ABSD-705).
+            Agent.PlanRequested = () =>
+            {
+                BoardPlan.Choose(PlanCommand.Import);
+                CurrentSectionIndex = PlanSection;
+            };
+        }
+
         // The gate reads the shell's unsaved-edits state: a Plan is computed from
         // the file, so edits that exist only in the editor buffer must not be
         // planned or applied as if they were on disk.
@@ -235,6 +277,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         // An audit compares the board against the file for the same reason.
         Audit.UnsavedEditsCheck = () => HasUnsavedEdits;
+
+        // …and both are equally wrong against a file somebody else has rewritten
+        // since it was opened (ABSD-504).
+        BoardPlan.StaleProfileCheck = () => IsStale;
 
         // The only sanctioned route from a detected drift to a fix: Audit names the
         // command, the shell switches to the Plan surface and generates it there.
@@ -281,6 +327,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private const int SprintsSection = 3;
     private const int AssigneesSection = 4;
     private const int HistorySection = 5;
+    private const int AgentSection = 6;
 
     // Not while an error is up — the failure banner owns the pane then.
     public bool ShowOnboarding => CurrentSectionIndex == BacklogSection && !HasProfile && !HasError;
@@ -299,6 +346,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// keyboard shortcut can move the index without going through the rail.</summary>
     public bool ShowHistory => CurrentSectionIndex == HistorySection && History is not null;
 
+    public bool ShowAgent => CurrentSectionIndex == AgentSection && Agent is not null;
+
     public bool ShowPlanned => !CurrentSection.IsAvailable;
 
     public string MarkupSummary => ProblemCount switch
@@ -307,6 +356,73 @@ public sealed partial class MainWindowViewModel : ObservableObject
         1 => "! 1 markup problem",
         var n => $"! {n} markup problems",
     };
+
+    /// <summary>
+    ///     Re-opens the profile after an agent's edit was accepted. Not awaited —
+    ///     the accept has already returned to the surface that asked for it — but
+    ///     named rather than discarded inline, so the fire-and-forget is deliberate
+    ///     and visible.
+    /// </summary>
+    private void ReloadAfterAgentEdit() => _ = ReloadAsync();
+
+    /// <summary>
+    ///     Whether the backlog file still holds what this profile was opened from
+    ///     (ABSD-504, PRD-AC-15).
+    ///
+    ///     A poll rather than a <c>FileSystemWatcher</c>. The watcher's events are
+    ///     platform-specific, arrive several times for one save, and are silently
+    ///     dropped on network shares and some container filesystems — so a guard
+    ///     built on it would be least reliable exactly where a shared backlog is most
+    ///     likely. Comparing the content hash answers the real question directly, and
+    ///     an editor that rewrites identical bytes is correctly reported as no change.
+    ///
+    ///     The shell decides <em>what</em> stale means; the view decides <em>when</em>
+    ///     to ask — on a timer, and when the window comes back to the foreground.
+    /// </summary>
+    public async Task CheckForExternalChangeAsync()
+    {
+        if (Workspace is not { } workspace)
+        {
+            return;
+        }
+
+        // Already known to be stale: re-reading each tick would spend a file read to
+        // learn what is already on screen, and could only ever flip the flag back to
+        // false if the file were reverted — which a reload should confirm, not a poll.
+        if (IsStale)
+        {
+            return;
+        }
+
+        var stamped = await _loader.StampAsync(workspace.BacklogPath).ConfigureAwait(true);
+
+        // A read that failed is not evidence of a change. A file being written at
+        // the moment we looked, or a share that dropped, would otherwise raise a
+        // banner that clears itself a second later.
+        if (stamped.IsFailure)
+        {
+            return;
+        }
+
+        if (stamped.Value.ContentDiffersFrom(workspace.Stamp))
+        {
+            IsStale = true;
+            StatusText = "The backlog file changed on disk. Reload to pick it up.";
+        }
+    }
+
+    /// <summary>What the banner says. Empty while the profile is current.</summary>
+    public string ExternalChangeText => IsStale
+        ? "This backlog was changed on disk after it was opened here. Reload to see it — "
+          + "planning or applying from the copy in memory would review one text and write another."
+        : string.Empty;
+
+    /// <summary>
+    ///     Keeps the agent's scope on whatever the backlog rail has selected, so the
+    ///     prompt says "the selected Issue" about the Issue the user is looking at.
+    ///     Generated by the toolkit from <c>_selectedNode</c>.
+    /// </summary>
+    partial void OnSelectedNodeChanged(BacklogNodeViewModel? value) => Agent?.ScopeTo(value?.Item);
 
     /// <summary>
     ///     Opens whichever profile the switcher just made active.
@@ -442,6 +558,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Workspace = workspace;
         Onboarding.ImportErrorText = null;
 
+        // Whatever the file said a moment ago, this workspace was read from it now.
+        // Clearing here rather than in ReloadAsync covers every route back to a
+        // current profile — reload, save, an accepted agent edit, a profile switch.
+        IsStale = false;
+
         // A Plan — and a drift report — belong to the profile they were computed
         // against.
         BoardPlan.Discard();
@@ -473,7 +594,20 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // registry itself — there would be nothing to reopen. Explicitly
         // uncancellable: this one writes a file, and a half-written registry is
         // worse than a slow one.
-        _ = Profiles?.AddAsync(workspace, CancellationToken.None);
+        if (Profiles is { } profiles)
+        {
+            _ = RegisterAsync(profiles, workspace);
+        }
+
+        if (Agent is { } agent)
+        {
+            // The agent runs in this profile's directory and edits its backlog, so
+            // it must be pointed at the profile now open. The previous run's diff
+            // and verdict go with it: a review left standing would offer to accept
+            // an edit to a file this shell is no longer showing.
+            agent.Discard();
+            agent.Workspace = workspace;
+        }
 
         Rebuild(workspace, identity);
     }
@@ -613,6 +747,31 @@ public sealed partial class MainWindowViewModel : ObservableObject
         }
 
         Adopt(again.Value);
+    }
+
+
+    /// <summary>
+    ///     Registers the profile, and reports a failure rather than dropping it.
+    ///     This was <c>_ = Profiles?.AddAsync(...)</c>. Everything that matters in
+    ///     <c>AddAsync</c> happens before its first await -- the entry is added, the
+    ///     registry is persisted, the collection is republished -- so an exception in
+    ///     any of it faults the returned task synchronously, and the discard threw
+    ///     that away. A switcher that silently never listed the open profile looked
+    ///     exactly like one that worked.
+    /// </summary>
+    private static async Task RegisterAsync(
+        ProfileRegistryViewModel profiles, BacklogWorkspace workspace)
+    {
+        try
+        {
+            await profiles.AddAsync(workspace, CancellationToken.None).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            profiles.ErrorText =
+                $"This profile could not be added to the switcher: {ex.Message} "
+                + "(profile.not_registered)";
+        }
     }
 
     private void Clear()
