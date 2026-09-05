@@ -54,6 +54,14 @@
                                     </DataTemplate>
                                 </ComboBox.ItemTemplate>
                             </ComboBox>
+                            <!-- Un-registering forgets a profile; it never touches
+                                 the board.config.json it points at, which is why
+                                 the caption says "Forget" rather than "Delete". -->
+                            <Button Classes="quiet" Content="Forget this profile"
+                                    HorizontalAlignment="Stretch" Click="OnForgetProfile"
+                                    IsEnabled="{Binding Profiles.HasActiveProfile}"
+                                    ToolTip.Tip="Removes it from this list only. The board.config.json file and its backlog are left exactly where they are." />
+
                             <TextBlock Classes="error" TextWrapping="Wrap"
                                        Text="{Binding Profiles.ErrorText}"
                                        IsVisible="{Binding Profiles.HasError}" />
@@ -214,6 +222,22 @@
                 <!-- Body -->
                 <Panel Grid.Row="1">
 
+                    <!-- The external-change banner (ABSD-504). Above every pane
+                         because it is true of the profile, not of one surface, and
+                         because a Plan generated after it appears is refused. -->
+                    <Border Classes="badge error" VerticalAlignment="Top"
+                            HorizontalAlignment="Stretch" ZIndex="1"
+                            Margin="{StaticResource PagePadding}"
+                            IsVisible="{Binding IsStale}">
+                        <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                            <TextBlock Classes="icon" Text="!" VerticalAlignment="Center" />
+                            <TextBlock Classes="caption" TextWrapping="Wrap"
+                                       VerticalAlignment="Center"
+                                       Text="{Binding ExternalChangeText}" />
+                            <Button Classes="quiet" Content="Reload" Click="OnReloadClick" />
+                        </StackPanel>
+                    </Border>
+
                     <!-- Error -->
                     <StackPanel Classes="statePanel" IsVisible="{Binding HasError}">
                         <TextBlock Classes="stateTitle" Text="Could not open that profile" />
@@ -241,6 +265,10 @@
 
                     <!-- What this machine has applied. -->
                     <views:HistoryView IsVisible="{Binding ShowHistory}" />
+
+                    <!-- The agent draft-and-review surface. It edits the backlog
+                         file only; the board still goes through Plan and Apply. -->
+                    <views:AgentView IsVisible="{Binding ShowAgent}" />
 
                     <!-- A section this build does not offer. Saying why is more use
                          than an empty pane that looks broken. -->

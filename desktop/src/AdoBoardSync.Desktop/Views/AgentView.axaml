@@ -1,0 +1,154 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:agents="using:AdoBoardSync.Core.Agents"
+             xmlns:diff="using:AdoBoardSync.Core.Diff"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.AgentView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="{StaticResource PagePadding}">
+
+        <!-- ============================ The prompt ========================= -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}"
+                    IsVisible="{Binding !Agent.HasReview}">
+
+            <TextBlock Classes="detail" TextWrapping="Wrap"
+                       Text="Ask a local agent CLI to draft a change to the backlog file. It runs on this machine under its own credentials, and whatever it writes is shown to you as a diff before anything is kept." />
+
+            <!-- Which agent. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                    <TextBlock Text="Agent" Classes="fieldLabel" VerticalAlignment="Center" />
+                    <Button Classes="quiet" Content="Look again" Click="OnDiscover"
+                            IsEnabled="{Binding !Agent.IsRunning}" />
+                </StackPanel>
+                <ComboBox x:Name="ProviderList" HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding Agent.Providers}"
+                          SelectedItem="{Binding Agent.SelectedProvider, Mode=TwoWay}"
+                          IsEnabled="{Binding !Agent.IsRunning}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="agents:InstalledAgent">
+                            <TextBlock Text="{Binding Display}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </StackPanel>
+
+            <!-- ==================== The three disclosures ==================
+                 Read before the run, not after hovering something. A user is
+                 about to hand a local binary a directory; these say which
+                 binary, what it can see, and what it may change. -->
+            <Border Classes="pane">
+                <StackPanel Spacing="{StaticResource SpacingXS}"
+                            Margin="{StaticResource PagePadding}">
+                    <TextBlock Classes="fieldLabel" Text="Before you run it" />
+                    <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding Agent.ProviderStatement}" />
+                    <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding Agent.ReadStatement}" />
+                    <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding Agent.ChangeStatement}" />
+                </StackPanel>
+            </Border>
+
+            <!-- Scope. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <TextBlock Text="Scope" Classes="fieldLabel" />
+                <ComboBox x:Name="ScopeList" HorizontalAlignment="Stretch"
+                          ItemsSource="{Binding Agent.Scopes}"
+                          IsEnabled="{Binding !Agent.IsRunning}"
+                          SelectionChanged="OnScopeChanged">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:AgentScopeOption">
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Classes="caption" Text="{Binding Agent.ScopeStatement}" />
+            </StackPanel>
+
+            <!-- The prompt itself. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <TextBlock Text="What should it do?" Classes="fieldLabel" />
+                <TextBox Classes="field" AcceptsReturn="True" Height="90"
+                         TextWrapping="Wrap"
+                         PlaceholderText="Add a task to each Issue in this Epic for updating its runbook."
+                         Text="{Binding Agent.Prompt, Mode=TwoWay}"
+                         IsEnabled="{Binding !Agent.IsRunning}" />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="accent" Content="Run the agent" Click="OnRun"
+                        IsEnabled="{Binding Agent.CanRun}" />
+                <Button Classes="quiet" Content="Cancel" Click="OnCancel"
+                        IsVisible="{Binding Agent.CanCancel}" />
+                <Button Classes="quiet" Content="Generate a Plan" Click="OnPlan"
+                        IsVisible="{Binding Agent.CanPlan}"
+                        ToolTip.Tip="Opens the Plan surface. Nothing is approved here — a board write is still confirmed there." />
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding Agent.StatusText}" />
+            </StackPanel>
+
+            <TextBlock Classes="error" TextWrapping="Wrap"
+                       Text="{Binding Agent.ErrorText}"
+                       IsVisible="{Binding Agent.HasError}" />
+        </StackPanel>
+
+        <!-- ========================== The review ===========================
+             Replaces the prompt while an edit is under review: there is exactly
+             one decision to make, and offering the Run button beside it would
+             overwrite the very file the reviewer is deciding about. -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}"
+                    IsVisible="{Binding Agent.HasReview}">
+
+            <TextBlock Classes="detail" TextWrapping="Wrap"
+                       Text="The agent changed the backlog file. Nothing is kept until you accept it, and rejecting puts the file back exactly as it was." />
+
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="accent" Content="Accept the edit" Click="OnAccept" />
+                <Button Classes="quiet" Content="Reject and restore" Click="OnReject" />
+                <Border Classes="chip">
+                    <TextBlock Classes="caption" Text="{Binding Agent.DiffSummary}" />
+                </Border>
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding Agent.StatusText}" />
+            </StackPanel>
+
+            <TextBlock Classes="error" TextWrapping="Wrap"
+                       Text="{Binding Agent.ErrorText}"
+                       IsVisible="{Binding Agent.HasError}" />
+        </StackPanel>
+
+        <!-- ===================== Output, then the diff ===================== -->
+        <Grid Grid.Row="1" RowDefinitions="*,Auto">
+
+            <ScrollViewer Grid.Row="0" IsVisible="{Binding Agent.HasReview}">
+                <ItemsControl ItemsSource="{Binding Agent.DiffLines}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="diff:DiffLine">
+                            <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="{StaticResource SpacingS}">
+                                <!-- DESIGN-SYSTEM §5.3: the marker carries the
+                                     meaning, so a diff reads without colour. -->
+                                <TextBlock Grid.Column="0" Classes="caption mono" Text="{Binding Marker}" />
+                                <TextBlock Grid.Column="1" Classes="caption mono secondary"
+                                           Text="{Binding OriginalLine}" MinWidth="28"
+                                           TextAlignment="Right" />
+                                <TextBlock Grid.Column="2" Classes="mono" TextWrapping="NoWrap"
+                                           Text="{Binding Text}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+
+            <ScrollViewer Grid.Row="0" IsVisible="{Binding !Agent.HasReview}">
+                <ItemsControl ItemsSource="{Binding Agent.Output}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Classes="caption mono" TextWrapping="Wrap" Text="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</UserControl>

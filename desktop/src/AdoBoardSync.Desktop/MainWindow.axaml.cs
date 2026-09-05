@@ -2,6 +2,7 @@ using AdoBoardSync.Desktop.ViewModels;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AdoBoardSync.Desktop;
@@ -36,6 +37,36 @@ public partial class MainWindow : Window
         // reaching into the window's state.
         OnboardingPane.OpenExistingRequested += (_, _) => _ = PickProfileAsync();
         OnboardingPane.ProfileOpened += (_, workspace) => _viewModel.Adopt(workspace);
+
+        // The staleness poll (ABSD-504). The shell decides what stale means; this
+        // decides when to ask. Two triggers, because neither alone is enough: a
+        // window left open all afternoon needs the timer, and a user who tabs away
+        // to edit the backlog in another editor expects to be told the moment they
+        // come back, not up to thirty seconds later.
+        _staleness = new DispatcherTimer(
+            TimeSpan.FromSeconds(30), DispatcherPriority.Background, (_, _) => CheckForExternalChange());
+
+        Activated += (_, _) => CheckForExternalChange();
+    }
+
+    private readonly DispatcherTimer _staleness;
+
+    private void CheckForExternalChange() => _ = _viewModel.CheckForExternalChangeAsync();
+
+    protected override void OnOpened(EventArgs e)
+    {
+        base.OnOpened(e);
+        _staleness.Start();
+    }
+
+    /// <summary>
+    /// Stops the poll with the window. A timer left running holds the view model
+    /// alive and keeps reading a file nobody is looking at.
+    /// </summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _staleness.Stop();
+        base.OnClosed(e);
     }
 
     /// <summary>Loads a Board profile by path, used for command-line startup.</summary>
@@ -66,6 +97,20 @@ public partial class MainWindow : Window
         }
 
         _ = profiles.SetActiveAsync(row.ConfigPath);
+    }
+
+    /// <summary>
+    ///     Un-registers the open profile (ABSD-502). It forgets the entry and
+    ///     nothing else — no file on disk is touched, which is why this needs no
+    ///     confirmation: the worst outcome is re-opening the same
+    ///     <c>board.config.json</c> from the file picker.
+    /// </summary>
+    private void OnForgetProfile(object? sender, RoutedEventArgs e)
+    {
+        if (_viewModel.Profiles is { ActiveProfile: { } active } profiles)
+        {
+            _ = profiles.RemoveAsync(active.ConfigPath);
+        }
     }
 
     /// <summary>
