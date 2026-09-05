@@ -33,8 +33,25 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
   confirmation with a stale-plan guard.
 - Continuous integration. Every push and pull request runs the CLI suite on
   Python 3.9 and 3.13, and the desktop build, unit, and parity suites.
+- The desktop application's remaining surfaces: sprint and assignee tables that
+  edit `board.config.json` atomically and schema-validated, an Apply timeline
+  scoped to the open profile, and a profile switcher backed by a registry kept
+  under the user's own local data — never beside a backlog, where it would
+  eventually be committed, and holding no credential by construction.
+- A headless UI interaction harness. Tests now open the real window, click its
+  buttons and type into its fields, and fail on any binding Avalonia could not
+  resolve — which a compiled binding's build-time check cannot cover for
+  `$parent`-relative paths or for bindings evaluated before their data exists.
+- An acceptance suite: one test per PRD acceptance criterion, each tagged with
+  its identifier, plus a guard that reads `PRD.md` and fails when a criterion has
+  no test or a test names one that no longer exists.
 
 ### Changed
+
+- The desktop application's assignee plan now shows an already-correctly-owned
+  item as **Unchanged** instead of omitting it. A plan listing two of the five
+  codes you configured was indistinguishable from one that had lost the other
+  three. Unchanged rows are never written, so the board sees no difference.
 
 - Apply phases fan their independent work-item writes out over pooled worker
   threads — the REST client hands each thread its own keep-alive connection —
@@ -56,6 +73,18 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
   every Issue on the board to look one up.
 
 ### Fixed
+
+- The desktop application recorded no operation history at all in the running
+  app. The shell built its own Plan gate rather than resolving the one the
+  composition root had configured, so the history recorder and the diagnostics
+  redactor registered there were never reached.
+- Even once reached, an Apply lost its per-item outcomes. They were recorded
+  from inside a `Progress<T>` callback, which the UI dispatcher delivers after
+  the reporting call returns — by which time the run had been closed, and a
+  closed run refuses outcomes. The timeline showed runs with no rows in them.
+- Running the desktop test suite wrote into the developer's own profile registry
+  and operation history, because the three local-data paths each resolved the OS
+  data directory for themselves with no way to redirect them.
 
 - The CLI's `audit` sorted every non-Epic work item into its Issue bucket, so on boards where Task titles cite issue codes — which is common — each citation became a phantom duplicate finding and a phantom description drift against the cited Issue, failing audits that were healthy. Audit now sorts strictly on Epic and Story types; found by, and re-validated live against, the desktop's plan-parity check.
 - The `max_retries` default is documented as `3`, which is what the code has

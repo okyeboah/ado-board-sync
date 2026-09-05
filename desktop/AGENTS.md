@@ -2,9 +2,12 @@
 
 This file is the entry point for any coding agent working in `desktop/` —
 Claude Code, Codex, Cursor, Copilot CLI, or any other AGENTS.md-compatible
-tool. It is self-contained: it does not depend on a shared "brain" directory,
-because none exists in this repository. Read this file before making changes
-here, whichever agent you are.
+tool. It owns the desktop app's own conventions and is complete on its own for
+work inside `desktop/`. Since 2026-09-03 this repository is also wired to the
+user-scope portable brain in `~/.agent/` (memory, shared skills, protocols) via
+the repository-root `AGENTS.md` and `CLAUDE.md` — read those too if your task
+reaches outside `desktop/`. Read this file before making changes here,
+whichever agent you are.
 
 ## Current status
 

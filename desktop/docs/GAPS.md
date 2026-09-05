@@ -14,15 +14,20 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 2 | 3 | 7 | 12 |
+| **Open** | 0 | 2 | 5 | 8 | 15 |
 | **Closed** | | | | | 44 |
 
-Total tracked: **56**.
+Total tracked: **59**.
 
-Last reconciled 2026-09-05, against commit `9f54b70`. The closed count is a
-recount of the rows themselves: the previous revision's totals line said 39
-while its table held 40. Both columns above are counted from the rows below,
-not carried forward.
+Last reconciled 2026-09-05, against commit `0d9cf52` plus the uncommitted
+working tree. The closed count is a recount of the rows themselves: an earlier
+revision's totals line said 39 while its table held 40. Both columns above are
+counted from the rows below, not carried forward.
+
+The three rows added in this reconciliation were all found by the work that
+closed ABSD-108 and ABSD-503 — a UI harness and an acceptance suite exist to
+turn "nobody has checked" into a row here, and each of them did so on its
+first run.
 
 ## Open
 
@@ -31,7 +36,7 @@ not carried forward.
 #### `os-credential-store-untested` — The one component that touches a real secret has no test
 
 - **Category:** test
-- **Evidence:** `OsCredentialStore.ForThisPlatform()` selects `MacOsKeychainCredentialStore`, `SecretToolCredentialStore` or `WindowsCredentialManagerStore`, and `PatResolver` puts that store ahead of `pat_env` and `pat_file`. Every `CredentialStore` reference in the test suite is either `UnavailableCredentialStore` used as a stub (`AuditViewModelTests`) or a diagnostics field name (`DiagnosticsSinkTests`) — five references, none of them exercising a platform store. Deleting the body of any of the three would leave all 554 tests green.
+- **Evidence:** `OsCredentialStore.ForThisPlatform()` selects `MacOsKeychainCredentialStore`, `SecretToolCredentialStore` or `WindowsCredentialManagerStore`, and `PatResolver` puts that store ahead of `pat_env` and `pat_file`. Every `CredentialStore` reference in the test suite is either `UnavailableCredentialStore` used as a stub (`AuditViewModelTests`) or a diagnostics field name (`DiagnosticsSinkTests`) — five references, none of them exercising a platform store. Deleting the body of any of the three would leave all 655 tests green.
 - **Remedy:** Cover the three stores behind their process seam — `CredentialProcess.Run` is already the single point where the secret crosses to `/usr/bin/security` or `secret-tool`, so a fake process is enough for the macOS and Linux paths, including the exit-44 not-found mapping. The Windows P/Invoke path needs a Windows CI lane (ABSD-506's remainder). This blocks ABSD-103's move to Done.
 
 #### `write-path-never-run-against-a-real-board` — The connector's write path has never been exercised against the live API
@@ -40,8 +45,19 @@ not carried forward.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (3)
+### Medium (5)
 
+#### `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations write to different work items
+
+- **Category:** parity
+- **Evidence:** `PlanParityTests.TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks` pins it. `commands.assign` builds `code_item[CODE] = (id, field)` while walking ascending ids, so the last write wins and the **highest** id is assigned; `PlanBuilder.IssuesByCode` keeps the **lowest**. Only reachable on a board that `audit` already fails, and `dedup` keeps the lowest — so the port's answer is the one that survives a clean-up, which is why it was kept.
+- **Remedy:** Decide which is correct and make both agree, or state the divergence in FSD §5 as intended. Leaving it pinned-but-undocumented means the next parity failure here looks like a regression.
+
+#### `markup-gate-unreachable-from-the-editor` — PRD-AC-03's Apply block cannot be triggered by anything a user can type
+
+- **Category:** requirement
+- **Evidence:** `RequestApply` refuses when `workspace.MarkupProblemCount > 0`, and `BacklogMarkupAudit.ProblemsFor` audits the *generated* HTML. `MarkdownHtml.Format` calls `EscapeHtml` first, so `<b>` typed into a description reaches the board as `&lt;b&gt;` and the balance check always passes. `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` asserts the count is 0 for a description containing an unclosed tag, and has to build a workspace by hand to exercise the gate. The CLI's `check-html` has the same property.
+- **Remedy:** Decide what AC-03 is for. Either the criterion describes a guard on the converter (in which case say so, and the current tests are right), or descriptions are meant to allow raw HTML through (in which case escaping is the bug and the gate becomes reachable).
 
 #### `credential-store-constructed-outside-the-composition-root` — A view model builds its own adapter, bypassing the single seam ABSD-106 exists to enforce
 
@@ -63,7 +79,7 @@ not carried forward.
 - **Remedy:** Populate the Requirement field on those items from the issue bodies. (Priority being unset is per spec — GITHUB-PROJECT.md says 'Unset until product owner prioritizes'.)
 
 
-### Low (7)
+### Low (8)
 
 #### `ac05-ac07-not-on-any-issue` — PRD-AC-05 and PRD-AC-07 are assigned to ABSD-302 in TRACEABILITY but issue #14 names only AC-04
 
@@ -71,11 +87,11 @@ not carried forward.
 - **Evidence:** TRACEABILITY's AC-05 row names ABSD-302; issue #14's body reads '**Requirement:** PRD-AC-04' only.
 - **Remedy:** Update #14's body to '**Requirement:** PRD-AC-04, PRD-AC-05, PRD-AC-07' so the issue and TRACEABILITY.md agree, then populate the Project Requirement field from it.
 
-#### `absd-602-has-no-outcome` — ABSD-602 is on the board and in STATUS.md but BACKLOG.md never defines it
+#### `eleven-tickets-have-no-outcome` — A third of the tickets STATUS.md tracks are never defined in BACKLOG.md
 
 - **Category:** doc-accuracy
-- **Evidence:** `grep -c 'ABSD-602' BACKLOG.md` → 0, while STATUS.md carries a row for it and GAPS closed `absd-503-601-circular` by pointing at it ("ABSD-602 (#44) breaks the cycle"). BACKLOG.md's stated job in PROJECT-TRACKING.md §0 is "What exactly does each ticket require?" — it cannot answer that for this ticket. ABSD-601 immediately above it does have an Outcome.
-- **Remedy:** Add the Outcome from issue #44, and check whether any other ticket the board carries is missing from BACKLOG.md — this one was found by accident while judging the ticket Done, not by a check.
+- **Evidence:** The previous revision of this row named only ABSD-602, and its own remedy asked whether others were missing. They are. BACKLOG.md defines 26 tickets; STATUS.md tracks these eleven that it does not: **ABSD-104, 105, 108, 110, 111, 112, 306, 506, 507, 508, 602**. BACKLOG.md's stated job in PROJECT-TRACKING.md §0 is "What exactly does each ticket require?" — it cannot answer that for any of them, and every one is already built or part-built, so the answer would now be written from the code rather than the other way round.
+- **Remedy:** Import the Outcomes from the GitHub issues, which is where they were actually agreed. Do not write them from the implementation: an Outcome derived from what was built cannot disagree with it, and a ticket that cannot fail its own acceptance is not a ticket. Where no issue exists either, the honest fix is to delete the STATUS row and admit the work was unticketed.
 
 #### `config-writeback-unticketed` — The FSD contract's 'Save iteration config' and 'Save assignee config' operations are in no ticket's Outcome
 
@@ -106,6 +122,12 @@ not carried forward.
 - **Category:** doc-accuracy
 - **Evidence:** MECE-AUDIT.md:86 'all 15 documented constructs appear in a fixture.' ParityCoverageTests.cs has 14 [InlineData] rows, and `--list-tests` shows 15 ParityCoverageTests = 14 theory rows + 1 fact.
 - **Remedy:** Either fix MECE-AUDIT.md:86 to 14, or add the missing construct (FSD §3.2.3 also names pipe-table header rows and line-wrap/blank-line rules, which the guard does not enumerate separately).
+
+#### `two-local-data-directory-names` — This machine's data lands in two differently named directories under one root
+
+- **Category:** consistency
+- **Evidence:** `LocalDataPaths.Root` is now the single root, but `JsonProfileRegistryStore` and `DiagnosticsPaths` ask it for `AdoBoardSync` while `SqliteOperationHistory` asks for `ado-board-sync`. A user looking for "where does this app keep my things" finds two folders side by side, and an uninstaller that removes one leaves the other.
+- **Remedy:** Pick one name. Renaming the history directory orphans any existing `history.db`, so the move needs a one-time migration or an explicit decision to drop pre-release history — which is why it was not folded into the change that introduced `LocalDataPaths`.
 
 ## Closed
 
