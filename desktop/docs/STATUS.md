@@ -74,7 +74,7 @@ remaining work is a view or a test around one; for none of them is it logic.
 | --- | --- | --- |
 | ABSD-101 Solution and conventions | Done | Modules, tests and documentation delivered and committed. The host and UI half is carried by ABSD-104 and ABSD-109 rather than silently by this row. |
 | ABSD-102 Config loader and schema validation | Done | `BoardConfig` + `BoardConfigSchema`; 4 parity scenarios, 22 config/schema tests, and a guard that fails the build if the schema gains a key the validator does not know. |
-| ABSD-103 Credential resolution | Partial | `PatResolver` resolves a session-entered token, the OS credential store, `pat_env`, then `pat_file`, collecting failures instead of stopping at the first (`PatResolverTests`, 7). `OsCredentialStore.ForThisPlatform()` picks the macOS Keychain, `secret-tool` or Windows Credential Manager, passing the secret on stdin and never on a command line. **Remaining:** not one of the three platform stores has a test — the suite only ever substitutes `UnavailableCredentialStore`. Built is not Done here. |
+| ABSD-103 Credential resolution | Done | `PatResolver` resolves a session-entered token, the OS credential store, `pat_env`, then `pat_file`, collecting failures instead of stopping at the first (`PatResolverTests`, 7). `OsCredentialStore.ForThisPlatform()` picks the macOS Keychain, `secret-tool` or Windows Credential Manager, passing the secret on stdin and never on a command line, and `CredentialStoreTests` covers all three through an injected process seam (21 tests, every platform). The store is resolved from the composition root rather than constructed by its callers. |
 | ABSD-104 Avalonia desktop host | Done | `AdoBoardSync.Desktop` builds an executable; `dotnet run` opens a window that loads a profile and renders the tree. Launch gate and per-section render tests pass (`WindowLaunchTests`, 7). |
 | ABSD-105 Central build properties and package versions | Done | `Directory.Build.props` sets the shared conventions and `ManagePackageVersionsCentrally`; `Directory.Packages.props` holds every version. No csproj in `src` or `tests` carries a `Version=` attribute any more. `tests/Directory.Build.targets` is imported after each project so it can read that project's own `IsTestProject`, which is what keeps the xunit packages off `AdoBoardSync.TestKit`. |
 | ABSD-106 Infrastructure and gateways | Done | `IBacklogFileStore` in Core, `FileSystemBacklogFileStore` in Infrastructure (strict UTF-8, BOM preserved to match `parser.py`, temp-then-rename with `Flush(flushToDisk: true)`), and `AppServices` as the one composition root. `BacklogFileStoreTests` (10) and `FileStoreParityTests` (3) cover it; `CompositionRootTests` (8) pins that every port resolves. |
@@ -162,6 +162,11 @@ shell has no agent section to put one in.
 | Not started | 19 | 0 |
 | **Total** | **44** | **44** |
 
+Counted from the rows above, not carried forward. The previous revision's
+totals said 23 Done / 21 Partial while its rows summed to 22 / 22 — a row was
+moved without the table following it, which is the third time this file's
+totals have drifted from its own contents.
+
 No ticket is Not started any more. That is a statement about coverage, not about
 completeness: 21 rows are Partial, and several of them are Partial for reasons
 no amount of code will fix on its own — a signature needs a credential, and the
@@ -210,14 +215,15 @@ run had been closed, so the store refused them.
 2. **Build the ABSD-700 surface** — the agent epic's view model is tested and its
    engine is proven; only the view is missing, and `UiHarness` is now there to
    test it the moment it exists.
-3. **Test the OS credential store** (ABSD-103) — the only Done-blocking gap that
-   is not a view.
+3. **View-level tests for the three views that landed before the harness did**
+   (ABSD-401/402/508) — each is built and reachable, and none is opened by a
+   test.
 
 ## Release slices
 
 | Release | State |
 | --- | --- |
-| R1 Desktop foundation | Partial — host, shell, onboarding, file gateway, composition root and central build properties all done and committed; the OS credential store is untested and the profile registry has no view |
+| R1 Desktop foundation | Partial — host, shell, onboarding, file gateway, composition root, central build properties and the OS credential store (now tested, and resolved through the composition root) all done and committed; the profile registry still has no switcher view |
 | R2 Backlog editor | Done except line-level gutter markers — parser, converter, validator, live-preview editing, atomic save and byte-identical CSV export are all committed and tested |
 | R3 Plan and apply | Partial — all nine commands plan, Apply is gated and concurrent, the Audit view is read-only and hands off closure; the write path has never run against a live board |
 | R4 Sprints, assignees and operations | Partial — every engine and view model built and tested, and the sprint, assignee and history views landed mid-audit with their nav sections live; all three are uncommitted and none has a view-level test |

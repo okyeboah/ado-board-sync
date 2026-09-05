@@ -14,8 +14,8 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 2 | 5 | 8 | 15 |
-| **Closed** | | | | | 44 |
+| **Open** | 0 | 1 | 4 | 8 | 13 |
+| **Closed** | | | | | 46 |
 
 Total tracked: **59**.
 
@@ -31,13 +31,8 @@ first run.
 
 ## Open
 
-### High (2)
+### High (1)
 
-#### `os-credential-store-untested` — The one component that touches a real secret has no test
-
-- **Category:** test
-- **Evidence:** `OsCredentialStore.ForThisPlatform()` selects `MacOsKeychainCredentialStore`, `SecretToolCredentialStore` or `WindowsCredentialManagerStore`, and `PatResolver` puts that store ahead of `pat_env` and `pat_file`. Every `CredentialStore` reference in the test suite is either `UnavailableCredentialStore` used as a stub (`AuditViewModelTests`) or a diagnostics field name (`DiagnosticsSinkTests`) — five references, none of them exercising a platform store. Deleting the body of any of the three would leave all 655 tests green.
-- **Remedy:** Cover the three stores behind their process seam — `CredentialProcess.Run` is already the single point where the secret crosses to `/usr/bin/security` or `secret-tool`, so a fake process is enough for the macOS and Linux paths, including the exit-44 not-found mapping. The Windows P/Invoke path needs a Windows CI lane (ABSD-506's remainder). This blocks ABSD-103's move to Done.
 
 #### `write-path-never-run-against-a-real-board` — The connector's write path has never been exercised against the live API
 
@@ -45,7 +40,7 @@ first run.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (5)
+### Medium (4)
 
 #### `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations write to different work items
 
@@ -59,11 +54,6 @@ first run.
 - **Evidence:** `RequestApply` refuses when `workspace.MarkupProblemCount > 0`, and `BacklogMarkupAudit.ProblemsFor` audits the *generated* HTML. `MarkdownHtml.Format` calls `EscapeHtml` first, so `<b>` typed into a description reaches the board as `&lt;b&gt;` and the balance check always passes. `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` asserts the count is 0 for a description containing an unclosed tag, and has to build a workspace by hand to exercise the gate. The CLI's `check-html` has the same property.
 - **Remedy:** Decide what AC-03 is for. Either the criterion describes a guard on the converter (in which case say so, and the current tests are right), or descriptions are meant to allow raw HTML through (in which case escaping is the bug and the gate becomes reachable).
 
-#### `credential-store-constructed-outside-the-composition-root` — A view model builds its own adapter, bypassing the single seam ABSD-106 exists to enforce
-
-- **Category:** architecture
-- **Evidence:** `PlanViewModel.cs:146` reads `_credentialStore = credentialStore ?? OsCredentialStore.ForThisPlatform();`. `AppServices.AddInfrastructure` already registers `ICredentialStore` (and `IBoardGatewayFactory`), and `CompositionRootTests` already resolves them — so the registration exists and nothing consumes it. ARCHITECTURE §2 and ABSD-106 both state the composition root is the only place a port meets its adapter.
-- **Remedy:** Inject `ICredentialStore` and drop the fallback. It works today, which is the problem: the fallback means a test or a platform that should have failed loudly gets a real keychain instead, and the second such bypass will be much harder to see than the first.
 
 #### `decision-needed-label-unused` — status:decision-needed exists but is on zero issues, while decisions remain open
 
@@ -133,6 +123,8 @@ first run.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `os-credential-store-untested` — The one component that touches a real secret had no test | high | 2026-09-05: `CredentialStoreTests`, 21 tests over the macOS Keychain adapter (including its exit-44 not-found mapping), secret-tool, the Windows store and the unavailable case. They run on every platform because `ProcessCredentialStore` now takes an injected `Runner`, so a test supplies what the tool would have said instead of spawning it — which is what made covering the macOS adapter on a Linux runner possible at all. Before this, deleting any of the three adapter bodies left the whole suite green. |
+| `credential-store-constructed-outside-the-composition-root` — A view model built its own adapter, bypassing the seam ABSD-106 exists to enforce | medium | 2026-09-05: `PlanViewModel` and `AuditViewModel` now resolve `ICredentialStore`, which `AppServices` had registered all along with nothing consuming it. The null-coalescing fallback is gone: it worked, which was the problem — a test or a platform that should have failed loudly got a real keychain instead. |
 | `desktop-code-never-ran-through-ci` — CI covered the desktop solution but had never run against any of this code | medium | 2026-09-05: pushed, and the workflow ran green over the whole tree at `2425e5b` — both CLI legs, the desktop build and headless Avalonia suite on ubuntu, and packaging on macOS, Windows and Linux. It took three runs. The first failed on all three package runners because `.gitignore` had swallowed `desktop/build/`; the second failed on Windows only, because Git-Bash there has no `zip`. Both defects existed for as long as the lane did and were invisible to every local run — which is the argument for this row having been open. |
 | `plan-covers-two-of-nine-commands` — The Plan Builder covers import, resync and resync-tasks; six CLI commands have no desktop equivalent | medium | 2026-09-05: all nine now plan. `PlanBuilder` exposes `BuildImport`, `BuildResync`, `BuildResyncTasks`, `BuildDedup`, `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `BuildSyncOne` and `BuildAudit`, under 62 builder tests plus 12 `PlanParityTests`. Closing this row uncovered a real defect on the way: `assign` compared only `uniqueName`, where the CLI compares uniqueName, id and displayName — a display-name config would have re-planned the same write on every run and never converged. |
 | `uncommitted-cli-changes-under-parity-gate` — The parity suite compares .NET against the working-tree Python, which had uncommitted CLI changes | medium | 2026-09-05: committed in `9f54b70`, which included the CLI-side modifications and `gitstate.py`. The parity suite now shells out to committed modules. Note the successor risk, tracked by `desktop-code-never-ran-through-ci`: committed is not pushed, so CI has still not run that comparison. |
