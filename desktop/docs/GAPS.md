@@ -14,14 +14,25 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 6 | 6 | 13 |
-| **Closed** | | | | | 39 |
+| **Open** | 0 | 2 | 4 | 6 | 12 |
+| **Closed** | | | | | 43 |
 
-Total tracked: **52**.
+Total tracked: **55**.
+
+Last reconciled 2026-09-05, against commit `9f54b70`. The closed count is a
+recount of the rows themselves: the previous revision's totals line said 39
+while its table held 40. Both columns above are counted from the rows below,
+not carried forward.
 
 ## Open
 
-### High (1)
+### High (2)
+
+#### `os-credential-store-untested` — The one component that touches a real secret has no test
+
+- **Category:** test
+- **Evidence:** `OsCredentialStore.ForThisPlatform()` selects `MacOsKeychainCredentialStore`, `SecretToolCredentialStore` or `WindowsCredentialManagerStore`, and `PatResolver` puts that store ahead of `pat_env` and `pat_file`. Every `CredentialStore` reference in the test suite is either `UnavailableCredentialStore` used as a stub (`AuditViewModelTests`) or a diagnostics field name (`DiagnosticsSinkTests`) — five references, none of them exercising a platform store. Deleting the body of any of the three would leave all 554 tests green.
+- **Remedy:** Cover the three stores behind their process seam — `CredentialProcess.Run` is already the single point where the secret crosses to `/usr/bin/security` or `secret-tool`, so a fake process is enough for the macOS and Linux paths, including the exit-44 not-found mapping. The Windows P/Invoke path needs a Windows CI lane (ABSD-506's remainder). This blocks ABSD-103's move to Done.
 
 #### `write-path-never-run-against-a-real-board` — The connector's write path has never been exercised against the live API
 
@@ -29,13 +40,14 @@ Total tracked: **52**.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (6)
+### Medium (4)
 
-#### `broken-brain-hook-in-this-repo` — A user-level PostToolUse hook points at a .agent directory this repo does not have, so every Bash call errors
 
-- **Category:** toolchain
-- **Evidence:** ~/.claude/settings.json:10 'python3 "$CLAUDE_PROJECT_DIR/.agent/harness/hooks/claude_code_post_tool.py"'. `ls .agent` → 'No such file or directory'. The global CLAUDE.md declares ado-board-sync 'ruflo-primary: no brain present'.
-- **Remedy:** Guard the hook command the way .claude/settings.json:9 already guards its own ('[ -f "$D/…" ] || …'), or scope it to brain-primary repos. It does not block work but it noises every single tool call in this repo.
+#### `credential-store-constructed-outside-the-composition-root` — A view model builds its own adapter, bypassing the single seam ABSD-106 exists to enforce
+
+- **Category:** architecture
+- **Evidence:** `PlanViewModel.cs:146` reads `_credentialStore = credentialStore ?? OsCredentialStore.ForThisPlatform();`. `AppServices.AddInfrastructure` already registers `ICredentialStore` (and `IBoardGatewayFactory`), and `CompositionRootTests` already resolves them — so the registration exists and nothing consumes it. ARCHITECTURE §2 and ABSD-106 both state the composition root is the only place a port meets its adapter.
+- **Remedy:** Inject `ICredentialStore` and drop the fallback. It works today, which is the problem: the fallback means a test or a platform that should have failed loudly gets a real keychain instead, and the second such bypass will be much harder to see than the first.
 
 #### `decision-needed-label-unused` — status:decision-needed exists but is on zero issues, while decisions remain open
 
@@ -46,15 +58,10 @@ Total tracked: **52**.
 #### `desktop-code-never-ran-through-ci` — CI covers the desktop solution but has never run against any of this code
 
 - **Category:** test
-- **Evidence:** `build-and-test.yml` restores, builds and tests `desktop/AdoBoardSync.slnx` in Release on ubuntu, which includes the Desktop project and its headless Avalonia tests. None of that code is committed, so the workflow has never executed it — and this run added to the uncommitted tree (editing, CSV export, onboarding scaffold). Release build and full suite pass locally on macOS; ubuntu, and the headless platform there, are unverified.
-- **Remedy:** Commit the desktop tree and read the first workflow run rather than assuming it is green.
+- **Evidence:** `build-and-test.yml` restores, builds and tests `desktop/AdoBoardSync.slnx` in Release on ubuntu, which includes the Desktop project and its headless Avalonia tests. The tree was committed on 2026-09-05 (`9f54b70`) but **has not been pushed**, so the workflow still has never executed any of it. Release build and full suite pass locally on macOS — 554 tests, zero warnings; ubuntu, and the headless platform there, remain unverified.
+- **Remedy:** Push, then read the first workflow run rather than assuming it is green. Half of this row's original remedy is now discharged; the half that produces evidence is not.
+- **Update, 2026-09-05:** Narrowed from "never committed" to "never pushed". Still Medium: local green on one OS is not evidence about the ubuntu headless lane.
 
-#### `plan-covers-two-of-nine-commands` — The Plan Builder covers import, resync and resync-tasks; six CLI commands have no desktop equivalent
-
-- **Category:** ticket
-- **Evidence:** PlanBuilder exposes BuildImport, BuildResync and BuildResyncTasks. dedup, sprints, assign, close-children, audit and sync-one do not exist.
-- **Remedy:** ABSD-302 owns the remainder. No delete path existed at all when this row was written; resync-tasks brought the first deletes, which now also means `write-path-never-run-against-a-real-board` covers deletes.
-- **Update, 2026-09-01:** Still six commands short; the row stays open unchanged in scope.
 
 #### `project-requirement-field-empty` — The Requirement Project field is empty on all 26 items although 17 issue bodies name a PRD-AC
 
@@ -62,11 +69,6 @@ Total tracked: **52**.
 - **Evidence:** GITHUB-PROJECT.md's Requirement field spec says the value comes 'From the PRD's acceptance criteria table, if referenced.' `gh project item-list 2 --owner okyeboah --format json` returns no `requirement` key on any of the 26 items. Issue bodies do carry it: #8→PRD-AC-10, #9→01, #10→02, #11→03, #12→16, #14→04, #15→13, #16→06, #17→11, #18→12, #19→09, #20→08, #21→14, #22→01, #23→15, #25→17. (AC-18/19/20 now also exist and name ABSD-203/206/112.)
 - **Remedy:** Populate the Requirement field on those items from the issue bodies. (Priority being unset is per spec — GITHUB-PROJECT.md says 'Unset until product owner prioritizes'.)
 
-#### `uncommitted-cli-changes-under-parity-gate` — The parity suite compares .NET against the working-tree Python, which currently has uncommitted CLI changes
-
-- **Category:** test
-- **Evidence:** `git status --porcelain` shows modified CLI modules and a desktop tree that is entirely uncommitted, including this run's editing, CSV and onboarding work. CONVENTIONS.md:31-33 and `.github/workflows/build-and-test.yml` confirm the parity suite shells out to those modules. Local green is therefore measured against code CI has never seen.
-- **Remedy:** Commit or stash the CLI changes before treating a local `dotnet test` pass as parity evidence; the last three CI runs on main tested the committed tree, not this one.
 
 ### Low (6)
 
@@ -91,7 +93,7 @@ Total tracked: **52**.
 #### `issue-comment-counts-stale` — Two issue comments cite test counts that are now wrong, including on a closed issue used as evidence
 
 - **Category:** board
-- **Evidence:** Issue #22 comment: '43 comparisons run the live htmlfmt.py, parser.py and config.py'. Issue #24 (CLOSED) comment: '101 CLI tests on each Python, and 66 + 43 desktop tests'. Actual today: Core 116, Parity 71, Desktop 128 (+8 live skipped), CLI 129.
+- **Evidence:** Issue #22 comment: '43 comparisons run the live htmlfmt.py, parser.py and config.py'. Issue #24 (CLOSED) comment: '101 CLI tests on each Python, and 66 + 43 desktop tests'. Actual on 2026-09-05: Core 159, Parity 74, Desktop 321 (+8 live skipped) — 554 in the desktop solution.
 - **Remedy:** Add a follow-up comment on #22 with current counts; leave #24 (its cited run was accurate at the time) but stop treating issue comments as the live evidence source — STATUS.md is.
 
 #### `markdownlint-not-enforced` — A markdownlint config exists at the repo root but nothing runs it
@@ -110,6 +112,9 @@ Total tracked: **52**.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `plan-covers-two-of-nine-commands` — The Plan Builder covers import, resync and resync-tasks; six CLI commands have no desktop equivalent | medium | 2026-09-05: all nine now plan. `PlanBuilder` exposes `BuildImport`, `BuildResync`, `BuildResyncTasks`, `BuildDedup`, `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `BuildSyncOne` and `BuildAudit`, under 62 builder tests plus 12 `PlanParityTests`. Closing this row uncovered a real defect on the way: `assign` compared only `uniqueName`, where the CLI compares uniqueName, id and displayName — a display-name config would have re-planned the same write on every run and never converged. |
+| `uncommitted-cli-changes-under-parity-gate` — The parity suite compares .NET against the working-tree Python, which had uncommitted CLI changes | medium | 2026-09-05: committed in `9f54b70`, which included the CLI-side modifications and `gitstate.py`. The parity suite now shells out to committed modules. Note the successor risk, tracked by `desktop-code-never-ran-through-ci`: committed is not pushed, so CI has still not run that comparison. |
+| `broken-brain-hook-in-this-repo` — A user-level PostToolUse hook pointed at a .agent directory this repo does not have, so every Bash call errored | medium | 2026-09-05: fixed by the fleet consolidation rather than by this repo. `.claude/settings.json` now invokes `$HOME/.agent/harness/hooks/claude_code_post_tool.py`, which exists; the brain is user-scope and no longer expected per-repo, and this repo keeps only its own project skills in `.agents/skills/`. Verified present, not assumed. |
 | `cli-audit-counted-tasks-as-issues` — The CLI's audit sorted every non-Epic work item into its Issue bucket, so a Task whose title cited an issue code became a phantom duplicate and a phantom description-drift against the real Issue | high | Found by the desktop walkthrough: the live parity pair disagreed, and fetching all six DDI-1001 copies showed five were Task-typed citations while only the real Issue matched its backlog body. Fixed in `commands.audit` by sorting strictly on Epic and Story types; regression `test_a_task_citing_an_issue_code_is_neither_duplicate_nor_drift` pins it (129 CLI tests green), and the live cross-check passes again against the real board. |
 | `confirmation-gate-untested` — The one guard between a reviewed Plan and a real write had no test | high | Found by this MECE pass: `ConfirmQuestion` and `IsConfirming` appeared in no test, so deleting the `IsConfirming` check would have left the suite green. Closed by `PlanViewModelTests` — twelve tests asserting the fake board recorded no create and no update — and proven by removing the guard and watching two fail. Traceability rows PRD-AC-04 and PRD-AC-05 moved Open → Covered. |
 | `absd-101-closed-outcome-unmet` — ABSD-101 is closed and marked Done although its Outcome names a host and UI that were never built | blocker | Split rather than reopened: ABSD-104 (#28) owns the host, ABSD-109 (#33) the design system and shell chrome, ABSD-111 (#35) the document reconciliation. Recorded as a comment on #6. |
