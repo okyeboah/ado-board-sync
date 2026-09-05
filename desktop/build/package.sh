@@ -101,7 +101,24 @@ SIGNING
   win-*)
     archive="$out/ado-board-sync-$version-$rid-unsigned.zip"
     rm -f "$archive"
-    (cd "$source_dir" && zip -qr "$archive" .)
+
+    # Git-Bash on the Windows runner has no `zip` — CI failed here with
+    # "zip: command not found" the first time this lane got far enough to run.
+    # Fall through what a Windows machine actually has instead of assuming one
+    # tool: 7-Zip ships on the GitHub runner image, and Compress-Archive is in
+    # every PowerShell. Compress-Archive takes native paths, hence cygpath.
+    if command -v zip >/dev/null 2>&1; then
+      (cd "$source_dir" && zip -qr "$archive" .)
+    elif command -v 7z >/dev/null 2>&1; then
+      (cd "$source_dir" && 7z a -tzip -bso0 -bsp0 "$archive" ./*)
+    elif command -v powershell >/dev/null 2>&1; then
+      powershell -NoProfile -NonInteractive -Command \
+        "Compress-Archive -Path '$(cygpath -w "$source_dir")\\*' \
+                          -DestinationPath '$(cygpath -w "$archive")' -Force"
+    else
+      echo "Need zip, 7z or powershell to build $archive; none found." >&2
+      exit 1
+    fi
     echo "==> $archive"
 
     cat <<'SIGNING'
