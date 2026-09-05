@@ -13,37 +13,10 @@
 #   ./publish.sh                  # this machine's runtime identifier
 #   ./publish.sh osx-arm64 win-x64 linux-x64
 #
-set -euo pipefail
+# shellcheck source=common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-desktop="$(cd "$here/.." && pwd)"
-project="$desktop/src/AdoBoardSync.Desktop/AdoBoardSync.Desktop.csproj"
-out="$desktop/artifacts/publish"
-
-# The version the package carries. Taken from the Python package's pyproject.toml
-# so the CLI and the desktop app cannot claim different versions of the same
-# product — they are one release, and a user reporting a bug names one number.
-version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$desktop/../pyproject.toml" | head -1)"
-if [[ -z "$version" ]]; then
-  echo "Could not read version from pyproject.toml" >&2
-  exit 1
-fi
-
-detect_rid() {
-  local os arch
-  case "$(uname -s)" in
-    Darwin) os=osx ;;
-    Linux) os=linux ;;
-    MINGW* | MSYS* | CYGWIN*) os=win ;;
-    *) echo "Unsupported operating system: $(uname -s)" >&2; exit 1 ;;
-  esac
-  case "$(uname -m)" in
-    arm64 | aarch64) arch=arm64 ;;
-    x86_64 | amd64) arch=x64 ;;
-    *) echo "Unsupported architecture: $(uname -m)" >&2; exit 1 ;;
-  esac
-  echo "$os-$arch"
-}
+version="$(release_version)"
 
 rids=("$@")
 if [[ ${#rids[@]} -eq 0 ]]; then
@@ -51,7 +24,7 @@ if [[ ${#rids[@]} -eq 0 ]]; then
 fi
 
 for rid in "${rids[@]}"; do
-  target="$out/$rid"
+  target="$publish_root/$rid"
   echo "==> Publishing $rid (version $version)"
   rm -rf "$target"
 
@@ -59,7 +32,7 @@ for rid in "${rids[@]}"; do
   # Trimming is deliberately OFF: Avalonia resolves controls and converters
   # reflectively, and a trimmed build fails at window construction rather than at
   # build time — the worst possible place to find out.
-  dotnet publish "$project" \
+  dotnet publish "$desktop_dir/src/AdoBoardSync.Desktop/AdoBoardSync.Desktop.csproj" \
     --configuration Release \
     --runtime "$rid" \
     --self-contained true \
@@ -69,6 +42,11 @@ for rid in "${rids[@]}"; do
     -p:DebugType=embedded \
     -p:Version="$version" \
     --output "$target"
+
+  # The version this output actually carries, recorded beside it. package.sh
+  # reads this rather than re-deriving from pyproject.toml, so a package can
+  # never be labelled with a version its binary was not built from.
+  echo "$version" > "$publish_root/$rid.version"
 
   echo "==> $rid -> $target"
 done

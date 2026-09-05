@@ -7,12 +7,8 @@ __pycache__/
 *.pyc
 .venv/
 
-# Build artifacts — the Python sdist/wheel output at the repository root.
-# Anchored with a leading slash on purpose: an unanchored `build/` also matches
-# desktop/build/, which holds publish.sh and package.sh. That is not output, it
-# is the source CI runs, and it silently never got committed — the package lane
-# failed on all three runners with "desktop/build/publish.sh: No such file or
-# directory" the first time it ran.
+# Python sdist/wheel output. Anchored: an unanchored `build/` would also match
+# desktop/build/, which is committed source, not output.
 /build/
 /dist/
 *.egg-info/
@@ -37,7 +33,7 @@ desktop/local/
 *.DotSettings.user
 
 # Local presentation — not part of the package
-presentation.html
+/presentation.html
 
 # Local secrets
 .env

@@ -84,7 +84,9 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # The same pin the desktop job uses, for the same reason: the lane that
+          # publishes must not resolve a different SDK than the lane that gated it.
+          global-json-file: desktop/global.json
 
       # Bash on the Windows runner too, so one script covers all three lanes
       # rather than a PowerShell fork nobody runs locally.
@@ -92,31 +94,16 @@ jobs:
         shell: bash
         run: desktop/build/publish.sh ${{ matrix.rid }}
 
+      # Before packaging, not after: this is the check that catches a build for
+      # the wrong machine, and packaging it first spends 60-90s and ~100MB of I/O
+      # on output that is about to be thrown away.
+      - name: Check the published binary
+        shell: bash
+        run: desktop/build/verify.sh ${{ matrix.rid }}
+
       - name: Package
         shell: bash
         run: desktop/build/package.sh ${{ matrix.rid }}
-
-      # Proves the published binary is actually loadable on this runner, which is
-      # the failure a cross-compiled self-contained build actually has. It is not
-      # a launch: the app opens a window, and the runner has no display.
-      - name: Check the published binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          out="desktop/artifacts/publish/${{ matrix.rid }}"
-          case "${{ matrix.rid }}" in
-            win-*) exe="$out/AdoBoardSync.Desktop.exe" ;;
-            *)     exe="$out/AdoBoardSync.Desktop" ;;
-          esac
-          test -f "$exe" || { echo "No published executable at $exe"; exit 1; }
-          # A self-contained single file for the wrong architecture still exists
-          # and still has a size; only reading its header catches that.
-          case "${{ matrix.rid }}" in
-            osx-*)   file "$exe" | grep -q 'Mach-O 64-bit executable arm64' ;;
-            linux-*) file "$exe" | grep -q 'ELF 64-bit' ;;
-            win-*)   test -s "$exe" ;;
-          esac
-          echo "Published $(du -h "$exe" | cut -f1) executable for ${{ matrix.rid }}"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -124,3 +111,6 @@ jobs:
           path: desktop/artifacts/packages/
           if-no-files-found: error
           retention-days: 14
+          # Every artifact here is a dmg, a zip or a tar.gz — already compressed.
+          # Deflating them again costs runner time for no meaningful size gain.
+          compression-level: 0

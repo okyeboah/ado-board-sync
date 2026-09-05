@@ -14,44 +14,50 @@
 #   ./package.sh              # package whatever publish.sh left for this machine
 #   ./package.sh osx-arm64
 #
-set -euo pipefail
+# shellcheck source=common.sh
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
 
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-desktop="$(cd "$here/.." && pwd)"
-publish="$desktop/artifacts/publish"
-out="$desktop/artifacts/packages"
 app_name="ADO Board Sync"
 bundle_id="com.okyeboah.adoboardsync"
 
-version="$(sed -n 's/^version = "\(.*\)"/\1/p' "$desktop/../pyproject.toml" | head -1)"
-
-rid="${1:-}"
-if [[ -z "$rid" ]]; then
-  case "$(uname -s)-$(uname -m)" in
-    Darwin-arm64) rid=osx-arm64 ;;
-    Darwin-x86_64) rid=osx-x64 ;;
-    Linux-x86_64) rid=linux-x64 ;;
-    Linux-aarch64) rid=linux-arm64 ;;
-    *) echo "Name a runtime identifier explicitly on this platform." >&2; exit 1 ;;
-  esac
-fi
-
-source_dir="$publish/$rid"
+rid="${1:-$(detect_rid)}"
+source_dir="$publish_root/$rid"
 if [[ ! -d "$source_dir" ]]; then
   echo "No published build at $source_dir. Run ./publish.sh $rid first." >&2
   exit 1
 fi
 
-mkdir -p "$out"
+# The version the published binary was actually built from, not whatever
+# pyproject.toml says today — a stale publish directory must not be relabelled.
+stamp="$publish_root/$rid.version"
+if [[ ! -f "$stamp" ]]; then
+  echo "No version stamp at $stamp. Re-run ./publish.sh $rid." >&2
+  exit 1
+fi
+version="$(cat "$stamp")"
+exe="$(exe_name "$rid")"
+
+mkdir -p "$packages_root"
+
+# Every artifact is unsigned, on every platform, so every name says so in the
+# same place. The linux archive used to omit it, which made the one mechanism
+# that distinguishes signed from unsigned depend on which branch you were in.
+artifact="$packages_root/ado-board-sync-$version-$rid-unsigned"
+
+# Staged outside the packages directory on purpose: everything under
+# $packages_root is uploaded as a release artifact, and the .app is already
+# inside the .dmg. Shipping both doubled the macOS artifact.
+staging="$(mktemp -d)"
+trap 'rm -rf "$staging"' EXIT
 
 case "$rid" in
   osx-*)
-    bundle="$out/$app_name.app"
-    rm -rf "$bundle"
-    mkdir -p "$bundle/Contents/MacOS" "$bundle/Contents/Resources"
+    require_tool hdiutil
 
+    bundle="$staging/$app_name.app"
+    mkdir -p "$bundle/Contents/MacOS"
     cp -R "$source_dir"/* "$bundle/Contents/MacOS/"
-    chmod +x "$bundle/Contents/MacOS/AdoBoardSync.Desktop"
+    chmod +x "$bundle/Contents/MacOS/$exe"
 
     # LSMinimumSystemVersion matches the oldest macOS the .NET 10 runtime
     # supports; claiming lower would let the bundle launch and then fail.
@@ -65,7 +71,7 @@ case "$rid" in
   <key>CFBundleIdentifier</key><string>$bundle_id</string>
   <key>CFBundleVersion</key><string>$version</string>
   <key>CFBundleShortVersionString</key><string>$version</string>
-  <key>CFBundleExecutable</key><string>AdoBoardSync.Desktop</string>
+  <key>CFBundleExecutable</key><string>$exe</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -73,18 +79,12 @@ case "$rid" in
 </plist>
 PLIST
 
-    dmg="$out/ado-board-sync-$version-$rid-unsigned.dmg"
-    rm -f "$dmg"
-    if command -v hdiutil >/dev/null 2>&1; then
-      staging="$(mktemp -d)"
-      cp -R "$bundle" "$staging/"
-      ln -s /Applications "$staging/Applications"
-      hdiutil create -volname "$app_name" -srcfolder "$staging" -ov -format UDZO "$dmg" >/dev/null
-      rm -rf "$staging"
-      echo "==> $dmg"
-    else
-      echo "hdiutil not found; leaving the .app bundle unpackaged at $bundle" >&2
-    fi
+    artifact="$artifact.dmg"
+    rm -f "$artifact"
+    # hdiutil images the staging directory directly, so the bundle is copied
+    # once rather than built and then copied again to be imaged.
+    ln -s /Applications "$staging/Applications"
+    hdiutil create -volname "$app_name" -srcfolder "$staging" -ov -format UDZO "$artifact" >/dev/null
 
     cat <<'SIGNING'
 
@@ -99,27 +99,18 @@ SIGNING
     ;;
 
   win-*)
-    archive="$out/ado-board-sync-$version-$rid-unsigned.zip"
-    rm -f "$archive"
+    # Git-Bash on the Windows runner has no `zip`, which is how this lane first
+    # failed. Compress-Archive is the one archiver present on every Windows
+    # without depending on what a runner image happens to ship, so it is the
+    # only path — a fallback chain would mean shipping branches that never run
+    # anywhere and produce subtly different archives when they finally do.
+    require_tool powershell
 
-    # Git-Bash on the Windows runner has no `zip` — CI failed here with
-    # "zip: command not found" the first time this lane got far enough to run.
-    # Fall through what a Windows machine actually has instead of assuming one
-    # tool: 7-Zip ships on the GitHub runner image, and Compress-Archive is in
-    # every PowerShell. Compress-Archive takes native paths, hence cygpath.
-    if command -v zip >/dev/null 2>&1; then
-      (cd "$source_dir" && zip -qr "$archive" .)
-    elif command -v 7z >/dev/null 2>&1; then
-      (cd "$source_dir" && 7z a -tzip -bso0 -bsp0 "$archive" ./*)
-    elif command -v powershell >/dev/null 2>&1; then
-      powershell -NoProfile -NonInteractive -Command \
-        "Compress-Archive -Path '$(cygpath -w "$source_dir")\\*' \
-                          -DestinationPath '$(cygpath -w "$archive")' -Force"
-    else
-      echo "Need zip, 7z or powershell to build $archive; none found." >&2
-      exit 1
-    fi
-    echo "==> $archive"
+    artifact="$artifact.zip"
+    rm -f "$artifact"
+    powershell -NoProfile -NonInteractive -Command \
+      "Compress-Archive -Path '$(cygpath -w "$source_dir")\\*' \
+                        -DestinationPath '$(cygpath -w "$artifact")' -Force"
 
     cat <<'SIGNING'
 
@@ -135,19 +126,18 @@ SIGNING
     ;;
 
   linux-*)
-    staging="$(mktemp -d)"
     root="$staging/ado-board-sync-$version"
-    mkdir -p "$root/bin" "$root/share/applications" "$root/share/ado-board-sync"
+    mkdir -p "$root/share/applications" "$root/share/ado-board-sync"
 
     cp -R "$source_dir"/* "$root/share/ado-board-sync/"
-    chmod +x "$root/share/ado-board-sync/AdoBoardSync.Desktop"
+    chmod +x "$root/share/ado-board-sync/$exe"
 
     cat > "$root/share/applications/ado-board-sync.desktop" <<DESKTOP
 [Desktop Entry]
 Type=Application
 Name=$app_name
 Comment=Drive an Azure DevOps board from a Markdown backlog
-Exec=%INSTALL%/share/ado-board-sync/AdoBoardSync.Desktop
+Exec=%INSTALL%/share/ado-board-sync/$exe
 Terminal=false
 Categories=Development;
 DESKTOP
@@ -172,13 +162,15 @@ echo "  rm -rf $prefix/share/ado-board-sync $prefix/share/applications/ado-board
 INSTALL
     chmod +x "$root/install.sh"
 
-    archive="$out/ado-board-sync-$version-$rid.tar.gz"
-    rm -f "$archive"
-    tar -czf "$archive" -C "$staging" "ado-board-sync-$version"
-    rm -rf "$staging"
-    echo "==> $archive"
+    artifact="$artifact.tar.gz"
+    rm -f "$artifact"
+    tar -czf "$artifact" -C "$staging" "ado-board-sync-$version"
+
     echo
     echo "Install per-user with:  tar -xzf <archive> && ./ado-board-sync-$version/install.sh"
+    echo
+    echo "UNSIGNED. Linux packages carry no signature here; distribution-level"
+    echo "signing is the packager's, and ABSD-601 tracks it with the other two."
     ;;
 
   *)
@@ -186,3 +178,6 @@ INSTALL
     exit 1
     ;;
 esac
+
+echo
+echo "==> $artifact"

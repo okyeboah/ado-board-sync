@@ -69,11 +69,20 @@ cannot disagree about which SDK built a green run.
 ## Publishing
 
 ```bash
-dotnet publish src/AdoBoardSync.Desktop -c Release -r osx-arm64 --self-contained true
+./build/publish.sh                 # this machine's runtime identifier
+./build/publish.sh osx-arm64       # or win-x64, linux-x64, osx-x64
+./build/verify.sh osx-arm64        # assert the binary is for the machine it claims
+./build/package.sh osx-arm64       # per-user installable package
 ```
 
-The output lands in `src/AdoBoardSync.Desktop/bin/Release/net10.0/<rid>/publish/`.
-Substitute `win-x64`, `linux-x64` or `osx-x64` for the other targets.
+Output lands in `desktop/artifacts/publish/<rid>/` and `desktop/artifacts/packages/`.
+
+Use the script rather than a bare `dotnet publish`: the properties that make the
+result runnable on a machine with no .NET — single-file, self-contained, no
+trimming — live in it, and CI runs the same three scripts. A hand-rolled publish
+produces a framework-dependent build in a different directory, which
+`package.sh` will not find. Packages are unsigned; the scripts print the signing
+commands rather than pretending (ABSD-601).
 
 ## Contribution rules
 
