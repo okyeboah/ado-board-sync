@@ -1,3 +1,4 @@
+using AdoBoardSync.Infrastructure;
 using AdoBoardSync.Core.Agents;
 using AdoBoardSync.Core.Operations;
 using AdoBoardSync.Core.Results;
@@ -347,14 +348,31 @@ public class OperationHistoryTests
     }
 
     [Fact]
-    public void TheDefaultDatabaseLivesUnderTheUsersOwnProfileDirectory()
+    public void TheDefaultDatabaseLivesUnderThisMachinesOwnDataDirectory()
     {
+        // The property that matters is that it is not in a repository and not beside
+        // a backlog: agent prompts are stored in this file. It is checked against
+        // LocalDataPaths rather than the operating system's folder directly because
+        // the test run itself redirects that root — see TestDataDirectory, which is
+        // also what keeps this assertion from being run against the user's own data.
         var path = SqliteOperationHistory.DefaultDatabasePath();
 
         Assert.Equal("history.db", Path.GetFileName(path));
         Assert.Equal("ado-board-sync", Path.GetFileName(Path.GetDirectoryName(path)));
-        Assert.StartsWith(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), path, StringComparison.Ordinal);
+        Assert.StartsWith(LocalDataPaths.Root, path, StringComparison.Ordinal);
+        Assert.True(Path.IsPathRooted(path));
+    }
+
+    [Fact]
+    public void TheTestRunsDataIsRedirectedAwayFromTheUsersOwn()
+    {
+        // The guard on the guard. If the module initialiser ever stops running, this
+        // fails here rather than in whichever test quietly appends a fixture profile
+        // to the developer's registry.
+        var real = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+        Assert.NotEqual(real, LocalDataPaths.Root);
+        Assert.Contains("absd-tests-", LocalDataPaths.Root, StringComparison.Ordinal);
     }
 
     private static DateTimeOffset Instant(string text) =>

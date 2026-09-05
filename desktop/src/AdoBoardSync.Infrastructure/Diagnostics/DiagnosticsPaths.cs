@@ -28,16 +28,6 @@ public static class DiagnosticsPaths
 
     private static string BuildDefaultDirectory()
     {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
-        // Empty on a machine where the folder is not configured — a container, or a
-        // service account with no profile. Diagnostics still have to land somewhere,
-        // and a temp directory is a better answer than a path rooted at "".
-        if (string.IsNullOrEmpty(root))
-        {
-            root = Path.GetTempPath();
-        }
-
-        return Path.Combine(root, "AdoBoardSync", "logs");
+        return Path.Combine(LocalDataPaths.Directory("AdoBoardSync"), "logs");
     }
 }

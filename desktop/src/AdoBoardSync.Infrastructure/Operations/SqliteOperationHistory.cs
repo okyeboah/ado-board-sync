@@ -41,13 +41,7 @@ public sealed class SqliteOperationHistory : IOperationHistory, IAgentRunHistory
     /// </summary>
     public static string DefaultDatabasePath()
     {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrEmpty(root))
-        {
-            root = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        }
-
-        return Path.Combine(root, "ado-board-sync", "history.db");
+        return Path.Combine(LocalDataPaths.Directory("ado-board-sync"), "history.db");
     }
 
     public Task<Result<long>> BeginRunAsync(

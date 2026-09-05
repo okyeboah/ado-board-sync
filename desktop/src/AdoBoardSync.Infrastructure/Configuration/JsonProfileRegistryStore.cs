@@ -31,16 +31,7 @@ public sealed class JsonProfileRegistryStore : IProfileRegistryStore
 
     public static string DefaultPath()
     {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-
-        // Empty on a machine where the folder is not configured — a container, or a
-        // service account with no profile. The registry still has to land somewhere.
-        if (string.IsNullOrEmpty(root))
-        {
-            root = Path.GetTempPath();
-        }
-
-        return Path.Combine(root, "AdoBoardSync", "profiles.json");
+        return Path.Combine(LocalDataPaths.Directory("AdoBoardSync"), "profiles.json");
     }
 
     public Result<ProfileRegistry> Read()
