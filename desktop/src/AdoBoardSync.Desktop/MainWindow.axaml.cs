@@ -23,8 +23,14 @@ public partial class MainWindow : Window
     public MainWindow(MainWindowViewModel viewModel)
     {
         _viewModel = viewModel;
-        InitializeComponent();
+
+        // Before InitializeComponent, not after. Every binding in the tree attaches
+        // as the XAML is loaded, so a DataContext assigned afterwards means each one
+        // first resolves against null and logs a failure before re-evaluating. The
+        // window looked right either way; the log was full of warnings that made a
+        // real binding mistake impossible to spot (ABSD-108).
         DataContext = _viewModel;
+        InitializeComponent();
 
         // Onboarding owns the form, not the shell, so it reports back instead of
         // reaching into the window's state.
@@ -40,6 +46,27 @@ public partial class MainWindow : Window
     private void OnReloadClick(object? sender, RoutedEventArgs e) => _ = _viewModel.ReloadAsync();
 
     private void OnExportCsvClick(object? sender, RoutedEventArgs e) => _ = PickCsvDestinationAsync();
+
+    /// <summary>
+    ///     Switches profiles (ABSD-502).
+    ///
+    ///     The guard is not decoration. The combo's selection is bound to the
+    ///     switcher's own <c>ActiveProfile</c>, so every programmatic change —
+    ///     opening a profile, adopting a saved one, loading the registry at startup —
+    ///     raises this too. Without the comparison each of those would re-activate
+    ///     the profile that is already open, rewriting the registry file for nothing.
+    /// </summary>
+    private void OnProfileChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (_viewModel.Profiles is not { } profiles
+            || ProfileSwitcher.SelectedItem is not ProfileRowViewModel row
+            || ReferenceEquals(row, profiles.ActiveProfile))
+        {
+            return;
+        }
+
+        _ = profiles.SetActiveAsync(row.ConfigPath);
+    }
 
     /// <summary>
     /// The picker lives in the view; the view model takes a path, so it stays

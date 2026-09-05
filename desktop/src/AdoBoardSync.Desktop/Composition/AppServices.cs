@@ -98,6 +98,16 @@ public static class AppServices
         services.AddTransient<ApplyHistoryRecorder>();
         services.AddTransient<AgentAuthoringViewModel>();
 
+        // The Plan gate is resolved rather than constructed by the shell, which is
+        // what puts the history recorder and the diagnostics redactor behind Apply
+        // in the running app. Its remaining constructor parameters are test seams
+        // with defaults, and the container leaves those alone.
+        services.AddTransient<PlanViewModel>();
+
+        // One bundle, so the shell takes its panes as a single argument and every
+        // pane in it came from here (ABSD-106).
+        services.AddTransient<ShellSurfaces>();
+
         // The switcher is a singleton where the surfaces it feeds are transient: it
         // holds which profile is open, and a second copy of that answer is a second
         // active profile (ABSD-502).

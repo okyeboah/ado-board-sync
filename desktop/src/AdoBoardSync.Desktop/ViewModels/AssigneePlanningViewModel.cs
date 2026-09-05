@@ -139,6 +139,38 @@ public sealed partial class AssigneePlanningViewModel : ObservableObject
         OnPropertyChanged(nameof(SaveBlockedReason));
     }
 
+    /// <summary>
+    /// Empties the table, for when the profile it belonged to is closed. The row
+    /// subscriptions come off with it: a row left subscribed after its profile has
+    /// gone would mark the next profile's table dirty on its own.
+    /// </summary>
+    public void Clear()
+    {
+        _loading = true;
+        try
+        {
+            foreach (var row in Owners)
+            {
+                row.PropertyChanged -= OnRowChanged;
+            }
+
+            Owners.Clear();
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        _workspace = null;
+        IsDirty = false;
+        ErrorText = null;
+        CoverageNotes.Clear();
+        OnPropertyChanged(nameof(HasCoverageNotes));
+        StatusText = "No board profile open.";
+        OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(SaveBlockedReason));
+    }
+
     public void Add()
     {
         Owners.Add(Watch(new AssigneeRowViewModel()));

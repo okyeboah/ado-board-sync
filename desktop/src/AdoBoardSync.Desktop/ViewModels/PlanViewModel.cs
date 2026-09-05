@@ -143,7 +143,15 @@ public sealed partial class PlanViewModel : ObservableObject
         DiagnosticRedaction? redaction = null)
     {
         _gatewayFactory = gatewayFactory ?? (pat => new AzureDevOpsGateway(pat));
-        _credentialStore = credentialStore ?? OsCredentialStore.ForThisPlatform();
+        // Not OsCredentialStore.ForThisPlatform(). The composition root registers
+        // the platform's store and injects it here; this fallback is for a view
+        // model built outside the container, and it must be the *empty* store
+        // rather than the real one. Reaching for the keychain from a default
+        // constructor meant a missing registration still worked, and a test that
+        // should have used no store quietly read the developer's own secrets —
+        // the failure would only ever have shown up as a prompt nobody expected.
+        _credentialStore = credentialStore
+            ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
         _recorder = recorder;
         _redaction = redaction;
 
@@ -458,15 +466,17 @@ public sealed partial class PlanViewModel : ObservableObject
                         workspace.ProfileKey, plan.Command, startedAt, cancellationToken);
                 }
 
-                var progress = new Progress<ApplyOutcome>(outcome =>
-                {
-                    Outcomes.Add(outcome);
-
-                    // Fire-and-forget on purpose: recording must not pace the
-                    // writes, and ApplyHistoryRecorder already swallows its own
-                    // failures rather than surfacing them as an Apply failure.
-                    _ = _recorder?.RecordAsync(outcome, DateTimeOffset.UtcNow, cancellationToken);
-                });
+                // Two observers, because they need opposite things. The list is
+                // bound, so it must be touched on the UI thread, which is what
+                // Progress<T> is for. The recorder must not be: Progress<T> posts
+                // to the dispatcher and returns, so a callback that started the
+                // history write would not have run yet when the run is closed
+                // below — and a completed run refuses outcomes, silently dropping
+                // the rows PRD-AC-08 promises. Recording therefore happens inline
+                // on the thread that reported the outcome, which puts the write on
+                // the recorder's chain before ApplyAsync returns.
+                var ui = new Progress<ApplyOutcome>(Outcomes.Add);
+                var progress = new RecordingProgress(ui, _recorder, cancellationToken);
 
                 var report = await ApplyExecutor.ApplyAsync(
                     gateway, workspace.Config, plan,
@@ -624,5 +634,32 @@ public sealed partial class PlanViewModel : ObservableObject
         return resolution.Found
             ? $"Token resolved from {resolution.SourceName}.{trouble}"
             : $"No personal access token found. Checked {resolver.DescribeSources()}.{trouble}";
+    }
+
+    /// <summary>
+    ///     Puts each outcome on the history recorder's queue immediately, then hands
+    ///     it to the bound collection through the dispatcher.
+    ///
+    ///     The order matters and the synchrony matters. Apply reports an outcome from
+    ///     whichever worker finished the write, and closes the run as soon as the last
+    ///     one returns. Anything that deferred the recording — a Progress&lt;T&gt;, a
+    ///     Task.Run — would still be waiting to start when the run closed, and the
+    ///     store refuses outcomes for a completed run: the rows would be dropped with
+    ///     nothing but a diagnostics line to say so.
+    /// </summary>
+    private sealed class RecordingProgress(
+        IProgress<ApplyOutcome> ui, ApplyHistoryRecorder? recorder, CancellationToken cancellationToken)
+        : IProgress<ApplyOutcome>
+    {
+        public void Report(ApplyOutcome value)
+        {
+            // Fire-and-forget, but already queued: the recorder chains this write
+            // internally and CompleteAsync awaits that chain. Recording never paces
+            // the board writes, and it swallows its own failures rather than
+            // turning a support problem into a failed Apply.
+            _ = recorder?.RecordAsync(value, DateTimeOffset.UtcNow, cancellationToken);
+
+            ui.Report(value);
+        }
     }
 }

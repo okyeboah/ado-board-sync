@@ -1,0 +1,106 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.SprintsView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="{StaticResource PagePadding}">
+
+        <!-- ============================ Controls =========================== -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}">
+
+            <TextBlock Classes="detail" TextWrapping="Wrap"
+                       Text="Which issue codes belong to which iteration. This table edits board.config.json on disk — it writes nothing to Azure DevOps. Scheduling the board is a Plan, generated on the Plan &amp; Apply surface and confirmed there." />
+
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="quiet" Content="Add sprint" Click="OnAdd"
+                        IsEnabled="{Binding !Sprints.IsBusy}" />
+                <Button Classes="accent" Content="Save to board.config.json" Click="OnSave"
+                        IsEnabled="{Binding Sprints.CanSave}" />
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding Sprints.StatusText}" />
+            </StackPanel>
+
+            <!-- Why Save is unavailable, rather than a button that does nothing. -->
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="{Binding Sprints.SaveBlockedReason}"
+                       IsVisible="{Binding !Sprints.CanSave}" />
+
+            <TextBlock Classes="error" TextWrapping="Wrap"
+                       Text="{Binding Sprints.ErrorText}"
+                       IsVisible="{Binding Sprints.HasError}" />
+        </StackPanel>
+
+        <!-- ============================= The table ========================= -->
+        <ScrollViewer Grid.Row="1">
+            <ItemsControl ItemsSource="{Binding Sprints.Sprints}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:SprintRowViewModel">
+                        <Border Classes="card" Margin="0,0,0,8">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto"
+                                  ColumnSpacing="{StaticResource SpacingM}"
+                                  RowSpacing="{StaticResource SpacingXS}">
+
+                                <StackPanel Grid.Row="0" Grid.Column="0"
+                                            Spacing="{StaticResource SpacingXS}">
+                                    <TextBlock Text="Iteration name" Classes="fieldLabel" />
+                                    <TextBox Classes="field" Text="{Binding Name, Mode=TwoWay}" />
+                                </StackPanel>
+
+                                <!-- Destructive, so it stays quiet and out of the tab
+                                     order's way rather than sitting beside the name. -->
+                                <Button Grid.Row="0" Grid.Column="1" Classes="quiet"
+                                        Content="Remove" Click="OnRemove"
+                                        VerticalAlignment="Bottom" />
+
+                                <Grid Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                      ColumnDefinitions="*,*"
+                                      ColumnSpacing="{StaticResource SpacingM}">
+                                    <StackPanel Grid.Column="0" Spacing="{StaticResource SpacingXS}">
+                                        <TextBlock Text="Starts" Classes="fieldLabel" />
+                                        <TextBox Classes="field" PlaceholderText="YYYY-MM-DD"
+                                                 Text="{Binding Start, Mode=TwoWay}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Spacing="{StaticResource SpacingXS}">
+                                        <TextBlock Text="Finishes" Classes="fieldLabel" />
+                                        <TextBox Classes="field" PlaceholderText="YYYY-MM-DD"
+                                                 Text="{Binding Finish, Mode=TwoWay}" />
+                                    </StackPanel>
+                                </Grid>
+
+                                <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                                            Spacing="{StaticResource SpacingXS}">
+                                    <TextBlock Text="Issue codes" Classes="fieldLabel" />
+                                    <TextBox Classes="field" PlaceholderText="ABSD-101, ABSD-102"
+                                             Text="{Binding Codes, Mode=TwoWay}" />
+                                    <TextBlock Classes="caption"
+                                               Text="{Binding CodeCount, StringFormat='{}{0} issue(s) in this sprint'}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- ========================== Coverage notes ======================= -->
+        <!-- A code in the table that no Issue carries, and the reverse. Advisory:
+             a backlog is edited over time, and a table that refused to save while
+             it disagreed would block the very edit that reconciles them. -->
+        <Border Grid.Row="2" Classes="pane" Margin="0,8,0,0"
+                IsVisible="{Binding Sprints.HasCoverageNotes}">
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        Margin="{StaticResource PagePadding}">
+                <TextBlock Classes="fieldLabel" Text="Coverage" />
+                <ItemsControl ItemsSource="{Binding Sprints.CoverageNotes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>

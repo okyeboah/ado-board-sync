@@ -32,6 +32,33 @@
                 <DockPanel Margin="{StaticResource SidebarPadding}" LastChildFill="False">
 
                     <StackPanel DockPanel.Dock="Bottom" Spacing="{StaticResource SpacingXS}">
+
+                        <!-- The profile switcher (ABSD-502). Hidden until this
+                             machine has more than one registered: a picker with a
+                             single entry is a control that cannot do anything. -->
+                        <StackPanel Spacing="{StaticResource SpacingXS}"
+                                    IsVisible="{Binding Profiles.HasProfiles}">
+                            <TextBlock Text="Board profile" Classes="fieldLabel" />
+                            <ComboBox x:Name="ProfileSwitcher"
+                                      HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding Profiles.Profiles}"
+                                      SelectedItem="{Binding Profiles.ActiveProfile}"
+                                      IsEnabled="{Binding !Profiles.IsSwitching}"
+                                      SelectionChanged="OnProfileChanged">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:ProfileRowViewModel">
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Label}" />
+                                            <TextBlock Text="{Binding BoardDisplay}" Classes="caption" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <TextBlock Classes="error" TextWrapping="Wrap"
+                                       Text="{Binding Profiles.ErrorText}"
+                                       IsVisible="{Binding Profiles.HasError}" />
+                        </StackPanel>
+
                         <Button Classes="quiet" Content="Open profile…"
                                 HorizontalAlignment="Stretch" Click="OnOpenClick" />
                         <Button Classes="quiet" Content="Reload"
@@ -207,8 +234,16 @@
                          finding to the Plan that fixes it. -->
                     <views:AuditView IsVisible="{Binding ShowAudit}" />
 
-                    <!-- A section this slice does not deliver. Naming the ticket is
-                         more use than an empty pane that looks broken. -->
+                    <!-- The two config tables. Both edit board.config.json on disk;
+                         neither writes to the board. -->
+                    <views:SprintsView IsVisible="{Binding ShowSprints}" />
+                    <views:AssigneesView IsVisible="{Binding ShowAssignees}" />
+
+                    <!-- What this machine has applied. -->
+                    <views:HistoryView IsVisible="{Binding ShowHistory}" />
+
+                    <!-- A section this build does not offer. Saying why is more use
+                         than an empty pane that looks broken. -->
                     <StackPanel Classes="statePanel"
                                 IsVisible="{Binding ShowPlanned}">
                         <TextBlock Classes="stateTitle" Text="{Binding CurrentSection.Name}" />

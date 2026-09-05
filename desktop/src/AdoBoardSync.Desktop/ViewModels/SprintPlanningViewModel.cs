@@ -174,6 +174,38 @@ public sealed partial class SprintPlanningViewModel : ObservableObject
         OnPropertyChanged(nameof(SaveBlockedReason));
     }
 
+    /// <summary>
+    /// Empties the table, for when the profile it belonged to is closed. The row
+    /// subscriptions come off with it: a row left subscribed after its profile has
+    /// gone would mark the next profile's table dirty on its own.
+    /// </summary>
+    public void Clear()
+    {
+        _loading = true;
+        try
+        {
+            foreach (var row in Sprints)
+            {
+                row.PropertyChanged -= OnRowChanged;
+            }
+
+            Sprints.Clear();
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        _workspace = null;
+        IsDirty = false;
+        ErrorText = null;
+        CoverageNotes.Clear();
+        OnPropertyChanged(nameof(HasCoverageNotes));
+        StatusText = "No board profile open.";
+        OnPropertyChanged(nameof(CanSave));
+        OnPropertyChanged(nameof(SaveBlockedReason));
+    }
+
     public void Add()
     {
         Sprints.Add(Watch(new SprintRowViewModel()));

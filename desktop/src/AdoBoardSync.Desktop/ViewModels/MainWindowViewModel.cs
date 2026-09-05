@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using AdoBoardSync.Core.Backlog;
+using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Planning;
 using AdoBoardSync.Core.Results;
 using AdoBoardSync.Desktop.Services;
@@ -14,6 +15,33 @@ namespace AdoBoardSync.Desktop.ViewModels;
 /// words rather than opening an empty screen.
 /// </summary>
 public sealed record NavSection(string Name, string Glyph, bool IsAvailable, string Caption, string PlannedDetail);
+
+/// <summary>
+/// The panes the shell hosts, gathered into one argument so the composition root
+/// hands the shell its surfaces rather than the shell building them.
+///
+/// <see cref="History" /> and <see cref="Profiles" /> are nullable because they are
+/// the two that need a store: a build with no operation history has no timeline to
+/// show, and says so, rather than showing an empty one.
+/// </summary>
+/// <param name="Plan">The Plan/Apply gate — the only path from this app to a write.</param>
+public sealed record ShellSurfaces(
+    PlanViewModel Plan,
+    AuditViewModel Audit,
+    SprintPlanningViewModel Sprints,
+    AssigneePlanningViewModel Assignees,
+    HistoryViewModel? History = null,
+    ProfileRegistryViewModel? Profiles = null)
+{
+    /// <summary>
+    /// Surfaces with no injected collaborators, for a test whose subject is
+    /// elsewhere. The two store-backed panes are absent by construction: a default
+    /// that reached for the real SQLite file would put a test's writes in the
+    /// user's own history.
+    /// </summary>
+    public static ShellSurfaces StandAlone() => new(
+        new PlanViewModel(), new AuditViewModel(), new SprintPlanningViewModel(), new AssigneePlanningViewModel());
+}
 
 /// <summary>
 /// The shell view model: one Board profile at a time, parsed with the same Core
@@ -43,6 +71,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(ShowBacklog))]
     [NotifyPropertyChangedFor(nameof(ShowPlan))]
     [NotifyPropertyChangedFor(nameof(ShowAudit))]
+    [NotifyPropertyChangedFor(nameof(ShowSprints))]
+    [NotifyPropertyChangedFor(nameof(ShowAssignees))]
+    [NotifyPropertyChangedFor(nameof(ShowHistory))]
     [NotifyPropertyChangedFor(nameof(ShowPlanned))]
     private int _currentSectionIndex;
 
@@ -107,10 +138,27 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public OnboardingViewModel Onboarding { get; }
 
     /// <summary>The Plan/Apply gate — the only path from this app to a write.</summary>
-    public PlanViewModel BoardPlan { get; } = new();
+    public PlanViewModel BoardPlan { get; }
 
     /// <summary>The read-only drift report. It authorises nothing (ABSD-304/306).</summary>
-    public AuditViewModel Audit { get; } = new();
+    public AuditViewModel Audit { get; }
+
+    /// <summary>The iteration table, edited into the profile's own config (ABSD-401).</summary>
+    public SprintPlanningViewModel Sprints { get; }
+
+    /// <summary>The assignee table, edited into the profile's own config (ABSD-402).</summary>
+    public AssigneePlanningViewModel Assignees { get; }
+
+    /// <summary>
+    ///     Every Apply this machine has run against the open profile (ABSD-508).
+    ///     Null when no history store was supplied — the section then reports
+    ///     itself unavailable rather than opening an empty timeline that looks
+    ///     like "you have never applied anything".
+    /// </summary>
+    public HistoryViewModel? History { get; }
+
+    /// <summary>The known board profiles, and which one is open (ABSD-502).</summary>
+    public ProfileRegistryViewModel? Profiles { get; }
 
     private readonly ProfileLoader _loader;
 
@@ -121,10 +169,64 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     private CancellationTokenSource? _loading;
 
-    public MainWindowViewModel(ProfileLoader loader, IBacklogFileStore store)
+    /// <param name="surfaces">The panes the shell hosts. Injected rather than
+    /// constructed here so the composition root's instances — the Plan gate carrying
+    /// the history recorder and the diagnostics redactor among them — are the ones
+    /// the shell actually shows. Building the gate inline was how Apply came to
+    /// record nothing outside the tests (ABSD-501). Omitted in a test that is not
+    /// about a surface, which then gets stand-alone defaults.</param>
+    public MainWindowViewModel(
+        ProfileLoader loader,
+        IBacklogFileStore store,
+        ShellSurfaces? surfaces = null)
     {
         _loader = loader;
         Onboarding = new OnboardingViewModel(store, loader);
+
+        surfaces ??= ShellSurfaces.StandAlone();
+        BoardPlan = surfaces.Plan;
+        Audit = surfaces.Audit;
+        Sprints = surfaces.Sprints;
+        Assignees = surfaces.Assignees;
+        History = surfaces.History;
+        Profiles = surfaces.Profiles;
+
+        Sections =
+        [
+            new("Backlog", "✎", true,
+                "The backlog file as parsed, beside what each item would send to the board.",
+                string.Empty),
+            new("Plan & Apply", "⇄", true,
+                "Read the board, review every change, then write only what you confirm.",
+                string.Empty),
+            new("Audit", "◎", true,
+                "Where the board has drifted from the backlog.",
+                string.Empty),
+            new("Sprints", "▤", true,
+                "Which items belong to which iteration.",
+                string.Empty),
+            new("Assignees", "☺", true,
+                "Who owns which item.",
+                string.Empty),
+            new("History", "⟲", History is not null,
+                "Every Apply this machine has run.",
+                "Needs the operation history store, which this build was started without."),
+        ];
+
+        // Saving an iteration or an assignee rewrites board.config.json, so the
+        // profile the rest of the shell is showing is now stale. The table re-reads
+        // it and hands the fresh workspace back here, rather than each table
+        // holding its own divergent copy.
+        Sprints.Reloaded = Adopt;
+        Assignees.Reloaded = Adopt;
+
+        // Choosing another profile in the switcher opens it here. The switcher owns
+        // which profile is active; the shell owns what is on screen, and this is the
+        // one edge between them.
+        if (Profiles is not null)
+        {
+            Profiles.ActiveProfileChanged += OnActiveProfileChangedAsync;
+        }
 
         // The gate reads the shell's unsaved-edits state: a Plan is computed from
         // the file, so edits that exist only in the editor buffer must not be
@@ -156,27 +258,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public bool HasProfile => Workspace is not null;
 
-    public IReadOnlyList<NavSection> Sections { get; } =
-    [
-        new("Backlog", "✎", true,
-            "The backlog file as parsed, beside what each item would send to the board.",
-            string.Empty),
-        new("Plan & Apply", "⇄", true,
-            "Read the board, review every change, then write only what you confirm.",
-            string.Empty),
-        new("Audit", "◎", true,
-            "Where the board has drifted from the backlog.",
-            string.Empty),
-        new("Sprints", "▤", false,
-            "Which items belong to which iteration.",
-            "Will assign items to the iterations named in the profile."),
-        new("Assignees", "☺", false,
-            "Who owns which item.",
-            "Will assign items to the people named in the profile."),
-        new("History", "⟲", false,
-            "Every Apply this machine has run.",
-            "Will list every Apply this machine has run, with its per-item outcomes."),
-    ];
+    public IReadOnlyList<NavSection> Sections { get; }
 
     public NavSection CurrentSection =>
         Sections[Math.Clamp(CurrentSectionIndex, 0, Sections.Count - 1)];
@@ -196,6 +278,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private const int BacklogSection = 0;
     private const int PlanSection = 1;
     private const int AuditSection = 2;
+    private const int SprintsSection = 3;
+    private const int AssigneesSection = 4;
+    private const int HistorySection = 5;
 
     // Not while an error is up — the failure banner owns the pane then.
     public bool ShowOnboarding => CurrentSectionIndex == BacklogSection && !HasProfile && !HasError;
@@ -206,6 +291,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
     public bool ShowAudit => CurrentSectionIndex == AuditSection;
 
+    public bool ShowSprints => CurrentSectionIndex == SprintsSection;
+
+    public bool ShowAssignees => CurrentSectionIndex == AssigneesSection;
+
+    /// <summary>Guarded on the surface itself, not only on the nav entry: a
+    /// keyboard shortcut can move the index without going through the rail.</summary>
+    public bool ShowHistory => CurrentSectionIndex == HistorySection && History is not null;
+
     public bool ShowPlanned => !CurrentSection.IsAvailable;
 
     public string MarkupSummary => ProblemCount switch
@@ -214,6 +307,48 @@ public sealed partial class MainWindowViewModel : ObservableObject
         1 => "! 1 markup problem",
         var n => $"! {n} markup problems",
     };
+
+    /// <summary>
+    ///     Opens whichever profile the switcher just made active.
+    ///
+    ///     The path comparison is what stops the cycle: <see cref="Adopt" /> registers
+    ///     the profile it opened, which is what raises this in the first place.
+    ///     Re-opening a profile that is already on screen would re-enter Adopt and
+    ///     discard the Plan the user was looking at.
+    /// </summary>
+    private Task OnActiveProfileChangedAsync(ProfileEntry? profile, CancellationToken cancellationToken)
+    {
+        if (profile is null || SamePath(profile.ConfigPath, ConfigPath))
+        {
+            return Task.CompletedTask;
+        }
+
+        return LoadAsync(profile.ConfigPath);
+    }
+
+    /// <summary>
+    ///     Whether two config paths name the same file. The registry stores absolute
+    ///     paths and the shell may hold the relative one it was opened with, so the
+    ///     comparison has to go through the filesystem's idea of the path rather than
+    ///     the string the caller happened to type.
+    /// </summary>
+    private static bool SamePath(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        try
+        {
+            return ProfileEntry.PathComparer.Equals(
+                Path.GetFullPath(left.Trim()), Path.GetFullPath(right.Trim()));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
+        {
+            return ProfileEntry.PathComparer.Equals(left.Trim(), right.Trim());
+        }
+    }
 
     /// <summary>Loads a Board profile, replacing whatever is currently shown.</summary>
     public async Task LoadAsync(string configPath)
@@ -319,6 +454,26 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // platform's credential tool. Adopt must not hold the render thread behind a
         // child process — least of all one that may be waiting on an unlock prompt.
         _ = BoardPlan.RefreshCredentialStatusAsync(workspace.Config);
+
+        // The two config tables read from the profile that is now open. Synchronous
+        // because both are reading the config already in memory — neither touches a
+        // disk or a board to fill itself in.
+        Sprints.Load(workspace);
+        Assignees.Load(workspace);
+
+        // The timeline is per-profile, so adopting a different one has to re-scope
+        // it. Not awaited, for the same reason the credential badge is not: a SQLite
+        // read must not hold the render thread while the backlog is being built.
+        // It takes the load token so that opening a second profile abandons the
+        // first one's timeline read rather than letting it land on top.
+        _ = History?.LoadAsync(workspace, _loading?.Token ?? CancellationToken.None);
+
+        // Registering the profile is what makes it reappear in the switcher next
+        // time (ABSD-502). A profile with no config file on disk is skipped by the
+        // registry itself — there would be nothing to reopen. Explicitly
+        // uncancellable: this one writes a file, and a half-written registry is
+        // worse than a slow one.
+        _ = Profiles?.AddAsync(workspace, CancellationToken.None);
 
         Rebuild(workspace, identity);
     }
@@ -472,6 +627,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         CodePrefix = string.Empty;
         BacklogFileName = string.Empty;
         HasUnsavedEdits = false;
+
+        // The per-profile surfaces go with it. A timeline or an iteration table
+        // left standing after the profile it described was closed is the same
+        // failure as a stale Plan, and Clear runs on exactly the paths — a failed
+        // open, a failed reload — where the previous profile is gone for good.
+        History?.Clear();
+        Sprints.Clear();
+        Assignees.Clear();
     }
 
     private void Rebuild(BacklogWorkspace workspace, NodeIdentity? preferredSelection = null)

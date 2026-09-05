@@ -1,0 +1,113 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ops="using:AdoBoardSync.Core.Operations"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.HistoryView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="{StaticResource PagePadding}">
+
+        <!-- ============================== Header =========================== -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}">
+
+            <TextBlock Classes="detail" TextWrapping="Wrap"
+                       Text="Every Apply this machine has run against the open profile, newest first. It is a local record — it is not read back from the board, and it holds no token. Another machine's runs are not here." />
+
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="quiet" Content="Refresh" Click="OnRefresh"
+                        IsEnabled="{Binding !History.IsBusy}" />
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding History.StatusText}" />
+            </StackPanel>
+
+            <TextBlock Classes="error" TextWrapping="Wrap"
+                       Text="{Binding History.ErrorText}"
+                       IsVisible="{Binding History.HasError}" />
+        </StackPanel>
+
+        <!-- ============================= Timeline ========================== -->
+        <Panel Grid.Row="1">
+
+            <StackPanel Classes="statePanel" IsVisible="{Binding History.IsEmpty}">
+                <TextBlock Classes="stateTitle" Text="Nothing applied yet" />
+                <TextBlock Classes="stateBody"
+                           Text="Once you confirm an Apply on the Plan surface, it is recorded here with the outcome of every row in it." />
+            </StackPanel>
+
+            <ScrollViewer IsVisible="{Binding History.HasRuns}">
+                <ItemsControl ItemsSource="{Binding History.Runs}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:OperationRunViewModel">
+                            <Border Classes="card" Margin="0,0,0,8">
+                                <StackPanel Spacing="{StaticResource SpacingXS}">
+
+                                    <!-- The whole header is the toggle: the outcomes
+                                         are loaded on demand, so opening a run is the
+                                         only thing there is to click. -->
+                                    <Button Classes="quiet" Click="OnToggle"
+                                            HorizontalAlignment="Stretch"
+                                            HorizontalContentAlignment="Left">
+                                        <Grid ColumnDefinitions="Auto,*,Auto"
+                                              ColumnSpacing="{StaticResource SpacingS}">
+                                            <!-- DESIGN-SYSTEM §5.3: a glyph beside the
+                                                 word, never colour alone. -->
+                                            <TextBlock Grid.Column="0" Classes="icon"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding Glyph}" />
+                                            <StackPanel Grid.Column="1">
+                                                <TextBlock Classes="value" Text="{Binding Command}" />
+                                                <TextBlock Classes="caption" Text="{Binding Result}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="2">
+                                                <TextBlock Classes="caption" Text="{Binding StartedAt}" />
+                                                <TextBlock Classes="caption" Text="{Binding Duration}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Button>
+
+                                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                                               Text="{Binding Summary}" />
+
+                                    <!-- An interrupted run is the one case where the
+                                         local record and the board may disagree, so it
+                                         says so rather than being quietly omitted. -->
+                                    <Border Classes="badge error" HorizontalAlignment="Left"
+                                            IsVisible="{Binding WasInterrupted}">
+                                        <TextBlock Classes="caption"
+                                                   Text="Interrupted — check the board" />
+                                    </Border>
+
+                                    <TextBlock Classes="caption" Text="Loading rows…"
+                                               IsVisible="{Binding IsLoadingOutcomes}" />
+
+                                    <ItemsControl ItemsSource="{Binding Outcomes}"
+                                                  IsVisible="{Binding IsExpanded}"
+                                                  Margin="24,4,0,0">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="ops:OperationItemOutcome">
+                                                <Grid ColumnDefinitions="Auto,Auto,*,Auto"
+                                                      ColumnSpacing="{StaticResource SpacingS}"
+                                                      Margin="0,0,0,2">
+                                                    <TextBlock Grid.Column="0" Classes="caption mono"
+                                                               Text="{Binding Operation}" />
+                                                    <TextBlock Grid.Column="1" Classes="caption mono"
+                                                               Text="{Binding Code}" />
+                                                    <TextBlock Grid.Column="2" Classes="caption"
+                                                               TextTrimming="CharacterEllipsis"
+                                                               Text="{Binding Title}" />
+                                                    <TextBlock Grid.Column="3" Classes="caption"
+                                                               Text="{Binding Message}" />
+                                                </Grid>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </StackPanel>
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Panel>
+    </Grid>
+</UserControl>

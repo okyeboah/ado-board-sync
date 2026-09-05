@@ -1,0 +1,87 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.AssigneesView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="{StaticResource PagePadding}">
+
+        <!-- ============================ Controls =========================== -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}">
+
+            <TextBlock Classes="detail" TextWrapping="Wrap"
+                       Text="Who owns which issue codes. This table edits board.config.json on disk — it writes nothing to Azure DevOps. Assigning the board is a Plan, generated on the Plan &amp; Apply surface and confirmed there." />
+
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="quiet" Content="Add owner" Click="OnAdd"
+                        IsEnabled="{Binding !Assignees.IsBusy}" />
+                <Button Classes="accent" Content="Save to board.config.json" Click="OnSave"
+                        IsEnabled="{Binding Assignees.CanSave}" />
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding Assignees.StatusText}" />
+            </StackPanel>
+
+            <TextBlock Classes="caption" TextWrapping="Wrap"
+                       Text="{Binding Assignees.SaveBlockedReason}"
+                       IsVisible="{Binding !Assignees.CanSave}" />
+
+            <TextBlock Classes="error" TextWrapping="Wrap"
+                       Text="{Binding Assignees.ErrorText}"
+                       IsVisible="{Binding Assignees.HasError}" />
+        </StackPanel>
+
+        <!-- ============================= The table ========================= -->
+        <ScrollViewer Grid.Row="1">
+            <ItemsControl ItemsSource="{Binding Assignees.Owners}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="vm:AssigneeRowViewModel">
+                        <Border Classes="card" Margin="0,0,0,8">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto"
+                                  ColumnSpacing="{StaticResource SpacingM}"
+                                  RowSpacing="{StaticResource SpacingXS}">
+
+                                <StackPanel Grid.Row="0" Grid.Column="0"
+                                            Spacing="{StaticResource SpacingXS}">
+                                    <TextBlock Text="Identity" Classes="fieldLabel" />
+                                    <TextBox Classes="field"
+                                             PlaceholderText="name@example.com, or the display name on the board"
+                                             Text="{Binding Identity, Mode=TwoWay}" />
+                                </StackPanel>
+
+                                <Button Grid.Row="0" Grid.Column="1" Classes="quiet"
+                                        Content="Remove" Click="OnRemove"
+                                        VerticalAlignment="Bottom" />
+
+                                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                            Spacing="{StaticResource SpacingXS}">
+                                    <TextBlock Text="Issue codes" Classes="fieldLabel" />
+                                    <TextBox Classes="field" PlaceholderText="ABSD-101, ABSD-102"
+                                             Text="{Binding Codes, Mode=TwoWay}" />
+                                    <TextBlock Classes="caption"
+                                               Text="{Binding CodeCount, StringFormat='{}{0} issue(s) owned'}" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+
+        <!-- ========================== Coverage notes ======================= -->
+        <Border Grid.Row="2" Classes="pane" Margin="0,8,0,0"
+                IsVisible="{Binding Assignees.HasCoverageNotes}">
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        Margin="{StaticResource PagePadding}">
+                <TextBlock Classes="fieldLabel" Text="Coverage" />
+                <ItemsControl ItemsSource="{Binding Assignees.CoverageNotes}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Classes="caption" TextWrapping="Wrap" Text="{Binding}" />
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+    </Grid>
+</UserControl>
