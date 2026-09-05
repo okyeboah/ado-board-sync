@@ -56,6 +56,15 @@ public static class OsCredentialStore
 /// </summary>
 internal static class CredentialProcess
 {
+    /// <summary>
+    /// How a credential tool is run. It exists so the three adapters can be tested:
+    /// the alternative is a suite that either spawns the real keychain — which
+    /// prompts, and edits the developer's own secrets — or never runs the adapters
+    /// at all, which is what left this the last untested path to a real secret.
+    /// </summary>
+    internal delegate Result<CredentialOutput> Runner(
+        string fileName, IReadOnlyList<string> arguments, string? stdin);
+
     // A store that is not answering must not hang a board action behind it. Long
     // enough for a keychain prompt the user is looking at, short enough that an
     // unattended run fails over to pat_env instead of stalling.
@@ -143,11 +152,29 @@ internal sealed record CredentialOutput(int ExitCode, string StandardOutput, str
 /// the other silently reported success. A subclass now supplies only what actually
 /// differs: the tool, its arguments, and how it signals a miss.
 /// </summary>
-public abstract class ProcessCredentialStore(bool isAvailable) : ICredentialStore
+public abstract class ProcessCredentialStore : ICredentialStore
 {
+    private readonly CredentialProcess.Runner _run;
+
+    protected ProcessCredentialStore(bool isAvailable)
+        : this(isAvailable, CredentialProcess.Run)
+    {
+    }
+
+    /// <summary>
+    /// The seam a test uses: it supplies what the tool would have said, and can
+    /// declare the store available on a platform that does not have the tool, so
+    /// the macOS adapter is exercised on the Linux CI runner and the reverse.
+    /// </summary>
+    internal ProcessCredentialStore(bool isAvailable, CredentialProcess.Runner run)
+    {
+        IsAvailable = isAvailable;
+        _run = run;
+    }
+
     public abstract string Name { get; }
 
-    public bool IsAvailable { get; } = isAvailable;
+    public bool IsAvailable { get; }
 
     /// <summary>The executable to run. Absolute where the platform guarantees one.</summary>
     protected abstract string Tool { get; }
@@ -175,7 +202,7 @@ public abstract class ProcessCredentialStore(bool isAvailable) : ICredentialStor
             return (string?)null;
         }
 
-        var run = CredentialProcess.Run(Tool, ReadArguments(key));
+        var run = _run(Tool, ReadArguments(key), null);
         if (run.IsFailure)
         {
             return run.Error!;
@@ -200,7 +227,7 @@ public abstract class ProcessCredentialStore(bool isAvailable) : ICredentialStor
             return Error.SourceFailure("credential.unavailable", $"This machine has no {Name}.");
         }
 
-        var run = CredentialProcess.Run(Tool, WriteArguments(key), StandardInputFor(secret));
+        var run = _run(Tool, WriteArguments(key), StandardInputFor(secret));
         if (run.IsFailure)
         {
             return run.Error!;
@@ -219,7 +246,7 @@ public abstract class ProcessCredentialStore(bool isAvailable) : ICredentialStor
             return true;
         }
 
-        var run = CredentialProcess.Run(Tool, DeleteArguments(key));
+        var run = _run(Tool, DeleteArguments(key), null);
         if (run.IsFailure)
         {
             return run.Error!;
@@ -238,10 +265,19 @@ public abstract class ProcessCredentialStore(bool isAvailable) : ICredentialStor
 /// password whose service is the key, so it is visible and revocable in Keychain
 /// Access under a name the user can recognise.
 /// </summary>
-public sealed class MacOsKeychainCredentialStore()
-    : ProcessCredentialStore(OperatingSystem.IsMacOS() && File.Exists(ToolPath))
+public sealed class MacOsKeychainCredentialStore : ProcessCredentialStore
 {
     private const string ToolPath = "/usr/bin/security";
+
+    public MacOsKeychainCredentialStore()
+        : base(OperatingSystem.IsMacOS() && File.Exists(ToolPath))
+    {
+    }
+
+    internal MacOsKeychainCredentialStore(CredentialProcess.Runner run, bool available = true)
+        : base(available, run)
+    {
+    }
 
     // `security`'s "the specified item could not be found in the keychain".
     private const int ItemNotFound = 44;
@@ -272,11 +308,20 @@ public sealed class MacOsKeychainCredentialStore()
 /// <c>secret-tool</c>. Absent on a headless server, which is why
 /// <see cref="IsInstalled"/> is asked before this adapter is ever chosen.
 /// </summary>
-public sealed class SecretToolCredentialStore()
-    : ProcessCredentialStore(OperatingSystem.IsLinux() && IsInstalled())
+public sealed class SecretToolCredentialStore : ProcessCredentialStore
 {
     private const string ToolName = "secret-tool";
     private const string Attribute = "ado-board-sync-key";
+
+    public SecretToolCredentialStore()
+        : base(OperatingSystem.IsLinux() && IsInstalled())
+    {
+    }
+
+    internal SecretToolCredentialStore(CredentialProcess.Runner run, bool available = true)
+        : base(available, run)
+    {
+    }
 
     public override string Name => "the desktop secret service (libsecret)";
 
