@@ -7,9 +7,14 @@ __pycache__/
 *.pyc
 .venv/
 
-# Build artifacts
-build/
-dist/
+# Build artifacts — the Python sdist/wheel output at the repository root.
+# Anchored with a leading slash on purpose: an unanchored `build/` also matches
+# desktop/build/, which holds publish.sh and package.sh. That is not output, it
+# is the source CI runs, and it silently never got committed — the package lane
+# failed on all three runners with "desktop/build/publish.sh: No such file or
+# directory" the first time it ran.
+/build/
+/dist/
 *.egg-info/
 
 # .NET (desktop app)
@@ -47,12 +52,13 @@ presentation.html
 /AGENTS.md
 /CLAUDE.md
 
-# Retired harness (ruflo, removed 2026-09-03). These stay as re-introduction
-# guards: a stray `ruflo init` re-creates them, and committing them would put a
-# second hook system back in the repo. See .agents/skills/ruflo/.
+# Retired harness (ruflo, removed 2026-09-03). Ignoring these does not prevent a
+# stray `ruflo init` from re-creating them — it only keeps them out of a commit.
+# The prohibition itself lives in ~/.agent/protocols/harness-precedence.md
+# (Rule 4); the repo-local account is in .agents/skills/ruflo/.
 .claude-flow/
 .swarm/
-ruvector.db
+ruvector.db*
 
 # Project-scoped agent skills are committed; everything else under .agents is local.
 .agents/*
