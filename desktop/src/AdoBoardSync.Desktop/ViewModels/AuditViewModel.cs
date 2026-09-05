@@ -52,7 +52,11 @@ public sealed partial class AuditViewModel : ObservableObject
         ICredentialStore? credentialStore = null)
     {
         _gatewayFactory = gatewayFactory ?? (pat => new AzureDevOpsGateway(pat));
-        _credentialStore = credentialStore ?? OsCredentialStore.ForThisPlatform();
+        // The empty store, not the platform's — see PlanViewModel. The composition
+        // root injects the real one; a view model built outside it must not reach
+        // into the user's keychain on its own (ABSD-106).
+        _credentialStore = credentialStore
+            ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
     }
 
     /// <summary>Every difference, in the order the report produced them.</summary>

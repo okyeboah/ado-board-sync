@@ -55,6 +55,13 @@ public sealed partial class PlanViewModel : ObservableObject
     private readonly ICredentialStore _credentialStore;
 
     /// <summary>
+    /// Which credential store this gate is actually using. Safe to show — the name
+    /// never carries a secret — and it is what lets a test prove the composition
+    /// root's store reached here rather than one built on the spot (ABSD-106).
+    /// </summary>
+    public string CredentialStoreName => _credentialStore.Name;
+
+    /// <summary>
     ///     Set by the shell: returns true while the editor holds unsaved edits. A
     ///     Plan is computed from the backlog file, so edits that exist only in the
     ///     buffer must not be planned or applied as if they were on disk.
