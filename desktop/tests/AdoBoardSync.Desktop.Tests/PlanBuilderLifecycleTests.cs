@@ -245,15 +245,23 @@ public class PlanBuilderLifecycleTests
     }
 
     [Fact]
-    public void AssignLeavesAnItemThatAlreadyHasTheWantedOwnerAlone()
+    public void AssignShowsAnItemThatAlreadyHasTheWantedOwnerAsUnchangedAndWritesNothingForIt()
     {
+        // Shown, not omitted (PRD-AC-12): a plan that silently drops the codes it
+        // has nothing to do for is indistinguishable from one that lost them.
+        // Unchanged rows never reach the board, which HasWork is what proves.
         var snapshot = BoardSnapshot.From([
             Work(1, "Issue", "PROJ-101 · A", assignedTo: "ADA@example.com"),
         ]);
 
         var plan = PlanBuilder.BuildAssign(Config(OneOwner), snapshot, Markdown);
 
-        Assert.Empty(plan.Rows);
+        var row = Assert.Single(plan.Rows);
+        Assert.Equal(PlanOperation.Unchanged, row.Operation);
+        Assert.Equal("PROJ-101", row.Code);
+        Assert.Empty(plan.WriteRows);
+        Assert.False(plan.HasWork);
+        Assert.Equal(1, plan.UnchangedCount);
     }
 
     [Fact]
@@ -267,8 +275,11 @@ public class PlanBuilderLifecycleTests
         var fillOnly = PlanBuilder.BuildAssign(
             Config(OneOwner), snapshot, Markdown, onlyUnassigned: true);
 
-        Assert.Single(overwrite.Rows);
-        Assert.Empty(fillOnly.Rows);
+        // Overwriting plans the write; filling only unassigned items reports the
+        // item as untouched rather than dropping it from the review entirely.
+        Assert.Equal(PlanOperation.Update, Assert.Single(overwrite.Rows).Operation);
+        Assert.Equal(PlanOperation.Unchanged, Assert.Single(fillOnly.Rows).Operation);
+        Assert.False(fillOnly.HasWork);
     }
 
     [Fact]

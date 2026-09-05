@@ -374,9 +374,24 @@ public static partial class PlanBuilder
             var issue = issuesByCode[code];
             var desired = owner[code];
 
-            if (!AssigneeSettled(issue, desired, onlyUnassigned))
-            {
-                rows.Add(new PlanRow
+            // An item that is already correctly owned is shown as Unchanged rather
+            // than omitted (PRD-AC-12). The CLI reports the same fact as a trailing
+            // count — "; 3 already correct" — and a reviewer needs it either way:
+            // a plan that lists two of the five codes they configured is otherwise
+            // indistinguishable from one where the other three went missing.
+            // Unchanged rows are never written, so this changes what is shown and
+            // not what reaches the board.
+            rows.Add(AssigneeSettled(issue, desired, onlyUnassigned)
+                ? new PlanRow
+                {
+                    Operation = PlanOperation.Unchanged,
+                    Level = BacklogLevel.Issue,
+                    Title = issue.Title.Trim(),
+                    Code = code,
+                    BoardId = issue.Id,
+                    WorkItemType = issue.WorkItemType,
+                }
+                : new PlanRow
                 {
                     Operation = PlanOperation.Update,
                     Level = BacklogLevel.Issue,
@@ -392,7 +407,6 @@ public static partial class PlanBuilder
                             desired),
                     ],
                 });
-            }
 
             if (!includeTasks)
             {
