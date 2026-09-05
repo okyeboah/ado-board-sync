@@ -24,7 +24,7 @@ checked from `STATUS.md` and `TRACEABILITY.md` alone.
 | R2 Backlog editor | Edit with live preview, inline validation, atomic save, CSV export. | **Done but for one row.** Editing, live recompute, atomic save with external-change refusal, and byte-identical CSV export are committed and tested. Open remainder: line-level gutter markers inside a description (ABSD-203). |
 | R3 Plan & apply | Import/resync/resync-tasks/dedup/sync planned, reviewed, applied; Audit view matches the CLI. | **Partial.** All nine CLI commands now plan; Apply is gated, concurrent and ordered; the Audit view reports drift read-only and hands closure back through the same gate. Remainder is not features but proof: the write path has never run against a real board. |
 | R4 Sprints, assignees & operations | Sprint/assignee tables with config write-back, close-children review, history store + timeline. | **Partial.** Every engine and view model exists and is tested — `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `SqliteOperationHistory`. The sprint, assignee and history views landed mid-audit and their nav sections are live; all three are uncommitted and none is opened by a test. Config write-back is still unticketed (GAPS `config-writeback-unticketed`). |
-| R5 Distribution | Signed installable package per OS, installable without a toolchain (PRD-AC-17). | Not started (ABSD-601/602). The only slice with no code at all. |
+| R5 Distribution | Signed installable package per OS, installable without a toolchain (PRD-AC-17). | **Partial.** `publish.sh` and `package.sh` produce self-contained, per-user packages for macOS, Windows and Linux, and CI builds and checks all three every run. The packages are unsigned by design — signing needs a credential this repository must never hold — so ABSD-601 stays open on exactly that. |
 | R6 Agent-assisted authoring | Agent CLIs spawn, edit as reviewed diff, plan consequences, runs recorded. | **Partial.** Providers, runner, edit session, diff review and run history are built and tested; the shell has no agent section to reach any of it. |
 
 ## 2. Burn-down
@@ -35,9 +35,9 @@ which its rows contradicted (14 / 25); all three columns below sum to 44.
 
 | State | 2026-08-26 (recounted) | 2026-09-01 | 2026-09-05 |
 | --- | --- | --- | --- |
-| Done | 5 | 5 | 21 |
+| Done | 5 | 5 | 23 |
 | Partial | 14 | 20 | 21 |
-| Not started | 25 | 19 | 2 |
+| Not started | 25 | 19 | 0 |
 
 The 2026-09-05 jump is one commit and one audit, not a week of delivery. The
 tree was committed (`9f54b70`), which discharged the "uncommitted work is not
@@ -80,7 +80,7 @@ engine work that used to sit on this path is done.
 | Risk | Likelihood | Impact | Response | Owner |
 | --- | --- | --- | --- | --- |
 | The write path has never touched a real board — patch shapes, parent links and retry rules are ports, not observations (GAPS: `write-path-never-run-against-a-real-board`, the one High) | Certain today | High — first real Apply is the first real test | Throwaway project + the three gated `[LiveFact(Writes = true)]` tests, before any R3 close | next slice |
-| CI has still never executed this code: it is committed but not pushed | Certain | High — local green on macOS proves nothing about ubuntu or the headless platform | Push and read the first workflow run before trusting any parity or coverage claim | next slice |
+| ~~CI has never executed this code~~ — **retired 2026-09-05.** Green at `2425e5b` across all six jobs. It cost three runs: two defects (uncommitted packaging scripts, no `zip` on the Windows runner) were invisible to every local run | — | — | Kept here as evidence for the next lane added without CI behind it | closed |
 | Views are arriving faster than the harness that can test them: three landed mid-audit with no test able to open them, and two more (ABSD-502, ABSD-700) are still to come | Certain | Medium — untouched code paths, and a burn-down that reads healthier than the application feels | ABSD-108's interaction harness, now urgent rather than tidy: it was meant to precede the views and did not | R4 |
 | The OS credential store is written, wired and has no test — the suite only ever substitutes `UnavailableCredentialStore` | Certain | Medium — it is the one component that touches a real secret | Cover the three platform stores behind the process seam; the store is already split so the subprocess can be faked | R1 close |
 | `PlanViewModel` constructs `OsCredentialStore.ForThisPlatform()` itself instead of resolving the registered port, so the composition root is not the only place a port meets its adapter | Certain | Low — works today, but it is the seam ABSD-106 exists to enforce, and the second such bypass will be harder to see | Inject `ICredentialStore`; `AppServices` already registers it and `CompositionRootTests` already resolves it | R1 close |
@@ -105,9 +105,9 @@ engine work that used to sit on this path is done.
 
 ## 6. Suggested next-slice plan
 
-1. **Push, and read the first CI run.** The tree is committed but unpushed, so
-   the ubuntu and headless lanes have still never seen it. Fix whatever they
-   find before anything else — every claim below assumes they are green.
+1. **Throwaway-project live writes.** Pushing and going green closed the CI
+   question; this is now the largest untested surface in the product, and the
+   one High gap that no amount of code closes by itself.
 2. **ABSD-108's interaction harness** — the separate xunit.v3 project that
    `Avalonia.Headless.XUnit` needs. It was meant to come before the views; three
    have now landed without it, so it is the thing standing between them and a

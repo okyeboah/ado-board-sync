@@ -14,10 +14,10 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 2 | 4 | 6 | 12 |
-| **Closed** | | | | | 43 |
+| **Open** | 0 | 2 | 3 | 7 | 12 |
+| **Closed** | | | | | 44 |
 
-Total tracked: **55**.
+Total tracked: **56**.
 
 Last reconciled 2026-09-05, against commit `9f54b70`. The closed count is a
 recount of the rows themselves: the previous revision's totals line said 39
@@ -40,7 +40,7 @@ not carried forward.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (4)
+### Medium (3)
 
 
 #### `credential-store-constructed-outside-the-composition-root` — A view model builds its own adapter, bypassing the single seam ABSD-106 exists to enforce
@@ -55,13 +55,6 @@ not carried forward.
 - **Evidence:** `gh issue list --repo okyeboah/ado-board-sync --label status:decision-needed --json number --jq 'length'` → 0. GITHUB-PROJECT.md:46 defines the label. PRD rev 2 resolved the scaffold decision and recorded storage/registry defaults, so fewer decisions block; the label still sits on no issue.
 - **Remedy:** Audit the remaining PRD/FSD open decisions against the open issues and apply the label where one genuinely blocks.
 
-#### `desktop-code-never-ran-through-ci` — CI covers the desktop solution but has never run against any of this code
-
-- **Category:** test
-- **Evidence:** `build-and-test.yml` restores, builds and tests `desktop/AdoBoardSync.slnx` in Release on ubuntu, which includes the Desktop project and its headless Avalonia tests. The tree was committed on 2026-09-05 (`9f54b70`) but **has not been pushed**, so the workflow still has never executed any of it. Release build and full suite pass locally on macOS — 554 tests, zero warnings; ubuntu, and the headless platform there, remain unverified.
-- **Remedy:** Push, then read the first workflow run rather than assuming it is green. Half of this row's original remedy is now discharged; the half that produces evidence is not.
-- **Update, 2026-09-05:** Narrowed from "never committed" to "never pushed". Still Medium: local green on one OS is not evidence about the ubuntu headless lane.
-
 
 #### `project-requirement-field-empty` — The Requirement Project field is empty on all 26 items although 17 issue bodies name a PRD-AC
 
@@ -70,13 +63,19 @@ not carried forward.
 - **Remedy:** Populate the Requirement field on those items from the issue bodies. (Priority being unset is per spec — GITHUB-PROJECT.md says 'Unset until product owner prioritizes'.)
 
 
-### Low (6)
+### Low (7)
 
 #### `ac05-ac07-not-on-any-issue` — PRD-AC-05 and PRD-AC-07 are assigned to ABSD-302 in TRACEABILITY but issue #14 names only AC-04
 
 - **Category:** board
 - **Evidence:** TRACEABILITY's AC-05 row names ABSD-302; issue #14's body reads '**Requirement:** PRD-AC-04' only.
 - **Remedy:** Update #14's body to '**Requirement:** PRD-AC-04, PRD-AC-05, PRD-AC-07' so the issue and TRACEABILITY.md agree, then populate the Project Requirement field from it.
+
+#### `absd-602-has-no-outcome` — ABSD-602 is on the board and in STATUS.md but BACKLOG.md never defines it
+
+- **Category:** doc-accuracy
+- **Evidence:** `grep -c 'ABSD-602' BACKLOG.md` → 0, while STATUS.md carries a row for it and GAPS closed `absd-503-601-circular` by pointing at it ("ABSD-602 (#44) breaks the cycle"). BACKLOG.md's stated job in PROJECT-TRACKING.md §0 is "What exactly does each ticket require?" — it cannot answer that for this ticket. ABSD-601 immediately above it does have an Outcome.
+- **Remedy:** Add the Outcome from issue #44, and check whether any other ticket the board carries is missing from BACKLOG.md — this one was found by accident while judging the ticket Done, not by a check.
 
 #### `config-writeback-unticketed` — The FSD contract's 'Save iteration config' and 'Save assignee config' operations are in no ticket's Outcome
 
@@ -112,6 +111,7 @@ not carried forward.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `desktop-code-never-ran-through-ci` — CI covered the desktop solution but had never run against any of this code | medium | 2026-09-05: pushed, and the workflow ran green over the whole tree at `2425e5b` — both CLI legs, the desktop build and headless Avalonia suite on ubuntu, and packaging on macOS, Windows and Linux. It took three runs. The first failed on all three package runners because `.gitignore` had swallowed `desktop/build/`; the second failed on Windows only, because Git-Bash there has no `zip`. Both defects existed for as long as the lane did and were invisible to every local run — which is the argument for this row having been open. |
 | `plan-covers-two-of-nine-commands` — The Plan Builder covers import, resync and resync-tasks; six CLI commands have no desktop equivalent | medium | 2026-09-05: all nine now plan. `PlanBuilder` exposes `BuildImport`, `BuildResync`, `BuildResyncTasks`, `BuildDedup`, `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `BuildSyncOne` and `BuildAudit`, under 62 builder tests plus 12 `PlanParityTests`. Closing this row uncovered a real defect on the way: `assign` compared only `uniqueName`, where the CLI compares uniqueName, id and displayName — a display-name config would have re-planned the same write on every run and never converged. |
 | `uncommitted-cli-changes-under-parity-gate` — The parity suite compares .NET against the working-tree Python, which had uncommitted CLI changes | medium | 2026-09-05: committed in `9f54b70`, which included the CLI-side modifications and `gitstate.py`. The parity suite now shells out to committed modules. Note the successor risk, tracked by `desktop-code-never-ran-through-ci`: committed is not pushed, so CI has still not run that comparison. |
 | `broken-brain-hook-in-this-repo` — A user-level PostToolUse hook pointed at a .agent directory this repo does not have, so every Bash call errored | medium | 2026-09-05: fixed by the fleet consolidation rather than by this repo. `.claude/settings.json` now invokes `$HOME/.agent/harness/hooks/claude_code_post_tool.py`, which exists; the brain is user-scope and no longer expected per-repo, and this repo keeps only its own project skills in `.agents/skills/`. Verified present, not assumed. |

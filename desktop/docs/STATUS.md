@@ -19,8 +19,14 @@ Partial, not Done — nobody else can run it yet.
 
 **The tree was committed on 2026-09-05 (`9f54b70`), which discharged that rule
 for every row that had been waiting only on it.** Ten rows flipped for that
-reason alone; their evidence had already been written here. Nothing is pushed
-yet, so CI still has not run against any of this code.
+reason alone; their evidence had already been written here.
+
+**It was then pushed, and CI ran over it for the first time — green at
+`2425e5b`**, all six jobs: both CLI matrix legs, the desktop build and its
+headless Avalonia suite on ubuntu, and packaging on macOS, Windows and Linux.
+Two defects surfaced only because it ran, and both are fixed: the packaging
+scripts were never committed (an unanchored `build/` in `.gitignore` swallowed
+them), and Git-Bash on the Windows runner has no `zip`.
 
 The tree also moved while this pass was being written: another line of work
 landed `SprintsView`, `AssigneesView` and `HistoryView` between the commit and
@@ -125,8 +131,8 @@ Every row here has its engine and its view model, and none has a view. See
 
 | Ticket | State | Evidence, or what remains |
 | --- | --- | --- |
-| ABSD-601 Installable desktop package | Not started | — |
-| ABSD-602 Self-contained local build | Not started | — |
+| ABSD-601 Installable desktop package | Partial | `desktop/build/package.sh` produces a per-user package on all three platforms — a `.app` in a `.dmg`, a portable `.zip` needing no admin rights, and a `.tar.gz` with a `.desktop` entry and an `install.sh` that installs under `~/.local`. CI builds all three every run and uploads them. **Remaining:** the Outcome says *signed*, and this deliberately is not: the script stamps every package unsigned and prints the exact `codesign`/`notarytool`/`signtool` invocations instead. Signing needs credentials this repository must never hold. |
+| ABSD-602 Self-contained local build | Done | `desktop/build/publish.sh` publishes self-contained single-file builds with the runtime bundled, so the result runs on a machine with no .NET installed (PRD-AC-17). Trimming is off on purpose — Avalonia resolves controls reflectively, and a trimmed build fails at window construction rather than at build time. Verified by CI on osx-arm64 (109M), win-x64 (102M) and linux-x64 (97M), each checked by reading the binary's header. **Note:** this ticket has no Outcome in `BACKLOG.md` (GAPS `absd-602-has-no-outcome`); it is judged against the board title and the PRD criterion. |
 
 ### ABSD-700 · Agent-assisted authoring
 
@@ -146,10 +152,15 @@ shell has no agent section to put one in.
 
 | State | 2026-09-01 | 2026-09-05 |
 | --- | --- | --- |
-| Done | 5 | 21 |
+| Done | 5 | 23 |
 | Partial | 20 | 21 |
-| Not started | 19 | 2 |
+| Not started | 19 | 0 |
 | **Total** | **44** | **44** |
+
+No ticket is Not started any more. That is a statement about coverage, not about
+completeness: 21 rows are Partial, and several of them are Partial for reasons
+no amount of code will fix on its own — a signature needs a credential, and the
+write path needs a real board.
 
 Of the 16 rows that reached Done, ten were already complete and waiting only on
 the commit; six were recorded as Not started while fully built. Eleven rows moved
@@ -173,7 +184,7 @@ was computed against, and the editor holds nothing unsaved. All nine CLI command
 now plan, and the Audit view reports drift read-only.
 
 Three honest limits. The connector's **write** path has still not run against a
-real board. **The OS credential store has no test** — it is written, wired and
+real board — the one thing CI going green does not tell us. **The OS credential store has no test** — it is written, wired and
 unproven. And profile switching (ABSD-502) and the entire agent epic
 have no surface at all — reachable from the test suite and not from the
 application. Sprints, assignees and history gained theirs mid-audit; those three
@@ -181,9 +192,8 @@ views have never been run by a test.
 
 ## Next tickets
 
-1. **Push, and read the first CI run** rather than assuming it is green — this
-   code has never been through the ubuntu lane (ABSD-506; GAPS
-   `desktop-code-never-ran-through-ci`).
+1. **Throwaway-project live writes** — now the largest untested surface in the
+   product, and the one High gap that code alone cannot close.
 2. **Test the three views that just landed**, then build the two that have not
    (ABSD-502's switcher and the ABSD-700 surfaces). ABSD-108's interaction
    harness is the prerequisite for both halves — three views now exist that no
@@ -199,5 +209,5 @@ views have never been run by a test.
 | R2 Backlog editor | Done except line-level gutter markers — parser, converter, validator, live-preview editing, atomic save and byte-identical CSV export are all committed and tested |
 | R3 Plan and apply | Partial — all nine commands plan, Apply is gated and concurrent, the Audit view is read-only and hands off closure; the write path has never run against a live board |
 | R4 Sprints, assignees and operations | Partial — every engine and view model built and tested, and the sprint, assignee and history views landed mid-audit with their nav sections live; all three are uncommitted and none has a view-level test |
-| R5 Distribution | Not started |
+| R5 Distribution | Partial — self-contained builds and per-user packages for all three platforms, built and checked by CI every run; unsigned, which is the whole of what remains |
 | R6 Agent-assisted authoring | Partial — providers, runner, edit session, diff review and run history built and tested; no agent surface anywhere in the shell |
