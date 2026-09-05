@@ -24,6 +24,16 @@ internal static class Shell
     public static MainWindowViewModel InMemory(IBacklogFileStore store) =>
         new(new ProfileLoader(store), store);
 
+    /// <summary>
+    /// A shell holding the surfaces a test names, for the ones whose subject is the
+    /// wiring between the shell and a pane rather than the pane itself.
+    /// </summary>
+    public static MainWindowViewModel WithSurfaces(ShellSurfaces surfaces)
+    {
+        var store = new FileSystemBacklogFileStore();
+        return new MainWindowViewModel(new ProfileLoader(store), store, surfaces);
+    }
+
     public static ProfileLoader Loader() => new(new FileSystemBacklogFileStore());
 
     public static OnboardingViewModel Onboarding(IBacklogFileStore? store = null)

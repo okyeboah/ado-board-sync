@@ -1,6 +1,4 @@
 using Avalonia;
-using Avalonia.Headless;
-using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Avalonia.Threading;
 
@@ -14,35 +12,13 @@ namespace AdoBoardSync.Desktop.Tests;
 /// </summary>
 public class WindowLaunchTests
 {
-    private static readonly Lock Gate = new();
-    private static bool _started;
-
     /// <summary>
-    /// Avalonia allows one application lifetime per process, so every test shares
-    /// this one.
+    /// Avalonia allows one application lifetime per process, and starting it is
+    /// <see cref="UiHarness" />'s job rather than this class's: SetupWithoutStarting
+    /// throws on a second call, so two test classes each bootstrapping their own
+    /// would fail whichever happened to run second (ABSD-108).
     /// </summary>
-    private static void EnsurePlatform()
-    {
-        lock (Gate)
-        {
-            if (_started)
-            {
-                return;
-            }
-
-            AppBuilder.Configure<App>()
-                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = true })
-                .SetupWithoutStarting();
-
-            _started = true;
-        }
-    }
-
-    private static void OnUiThread(Action action)
-    {
-        EnsurePlatform();
-        Dispatcher.UIThread.Invoke(action);
-    }
+    private static void OnUiThread(Action action) => UiHarness.OnUiThread(action);
 
     [Fact]
     public void TheApplicationLoadsItsStylesAndThemeResources()
