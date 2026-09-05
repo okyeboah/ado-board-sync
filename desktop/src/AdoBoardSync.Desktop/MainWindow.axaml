@@ -1,0 +1,388 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:conv="using:Avalonia.Data.Converters"
+        xmlns:views="using:AdoBoardSync.Desktop.Views"
+        xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+        mc:Ignorable="d" d:DesignWidth="1280" d:DesignHeight="820"
+        x:Class="AdoBoardSync.Desktop.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="ADO Board Sync"
+        Width="1280" Height="820"
+        MinWidth="1000" MinHeight="620"
+        WindowState="Maximized"
+        Background="{DynamicResource WindowBackgroundBrush}">
+
+    <Window.KeyBindings>
+        <KeyBinding Gesture="Ctrl+S" Command="{Binding SaveCommand}" />
+    </Window.KeyBindings>
+
+    <Border Background="{DynamicResource ShellBackgroundBrush}"
+            CornerRadius="{StaticResource RadiusLg}"
+            Margin="{StaticResource ShellMargin}"
+            ClipToBounds="True">
+        <Grid RowDefinitions="*,Auto" ColumnDefinitions="230,360,*">
+
+            <!-- ======================= Navigation rail ====================== -->
+            <Border Grid.Row="0" Grid.Column="0"
+                    Background="{DynamicResource SidebarBackgroundBrush}"
+                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,1,0"
+                    CornerRadius="{StaticResource RadiusSidebar}">
+                <DockPanel Margin="{StaticResource SidebarPadding}" LastChildFill="False">
+
+                    <StackPanel DockPanel.Dock="Bottom" Spacing="{StaticResource SpacingXS}">
+                        <Button Classes="quiet" Content="Open profile…"
+                                HorizontalAlignment="Stretch" Click="OnOpenClick" />
+                        <Button Classes="quiet" Content="Reload"
+                                HorizontalAlignment="Stretch" Click="OnReloadClick"
+                                IsEnabled="{Binding CanReload}" />
+                        <Button Classes="quiet" Content="Export CSV…"
+                                HorizontalAlignment="Stretch" Click="OnExportCsvClick"
+                                IsEnabled="{Binding HasProfile}"
+                                ToolTip.Tip="Write the ADO web-importer CSV from this backlog — the same bytes gen-csv writes. No credential needed." />
+                        <TextBlock Text="{Binding ConfigDisplay}" Classes="caption"
+                                   TextTrimming="CharacterEllipsis"
+                                   ToolTip.Tip="{Binding ConfigDisplay}"
+                                   Margin="{StaticResource HintMargin}" />
+                    </StackPanel>
+
+                    <StackPanel Spacing="{StaticResource SpacingXL}">
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                                <Border Classes="avatar">
+                                    <TextBlock Classes="onAccent large" Text="B" />
+                                </Border>
+                                <TextBlock Text="ADO Board Sync" Classes="title"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                            <TextBlock Text="Backlog editor and board sync" Classes="caption"
+                                       Margin="{StaticResource WordmarkIndent}" TextWrapping="Wrap" />
+                        </StackPanel>
+
+                        <ListBox x:Name="NavList"
+                                 ItemsSource="{Binding Sections}"
+                                 SelectedIndex="{Binding CurrentSectionIndex, Mode=TwoWay}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:NavSection">
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                                        <TextBlock Classes="icon" Text="{Binding Glyph}" />
+                                        <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </StackPanel>
+                </DockPanel>
+            </Border>
+
+            <!-- ========================= Backlog rail ======================= -->
+            <Border Grid.Row="0" Grid.Column="1" Padding="{StaticResource RailPadding}">
+                <DockPanel>
+                    <TextBlock DockPanel.Dock="Top" Text="Backlog" Classes="sectionTitle"
+                               Margin="{StaticResource SectionHeaderMargin}" />
+
+                    <!-- Counts. Every figure carries its own label, so the row reads
+                         without the user learning a colour code. -->
+                    <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
+                                Spacing="{StaticResource SpacingChip}"
+                                IsVisible="{Binding HasBacklog}"
+                                Margin="{StaticResource SubsectionMargin}">
+                        <Border Classes="chip">
+                            <TextBlock Classes="caption">
+                                <Run Text="{Binding EpicCount}" /><Run Text=" epics" />
+                            </TextBlock>
+                        </Border>
+                        <Border Classes="chip">
+                            <TextBlock Classes="caption">
+                                <Run Text="{Binding IssueCount}" /><Run Text=" issues" />
+                            </TextBlock>
+                        </Border>
+                        <Border Classes="chip">
+                            <TextBlock Classes="caption">
+                                <Run Text="{Binding TaskCount}" /><Run Text=" tasks" />
+                            </TextBlock>
+                        </Border>
+                    </StackPanel>
+
+                    <TextBlock DockPanel.Dock="Bottom" Classes="caption"
+                               Text="{Binding BacklogFileName}"
+                               IsVisible="{Binding HasBacklog}"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="{StaticResource SubsectionMargin}" />
+
+                    <!-- Empty state: no profile open yet. -->
+                    <StackPanel Classes="statePanel" IsVisible="{Binding !HasBacklog}">
+                        <TextBlock Classes="stateTitle" Text="No backlog open" />
+                        <TextBlock Classes="stateBody"
+                                   Text="Open a board.config.json, or describe the board yourself — both routes are on the right." />
+                    </StackPanel>
+
+                    <TreeView Classes="backlog"
+                              IsVisible="{Binding HasBacklog}"
+                              ItemsSource="{Binding Nodes}"
+                              SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                              Margin="0,8,0,0">
+                        <TreeView.ItemTemplate>
+                            <TreeDataTemplate ItemsSource="{Binding Children}" x:DataType="vm:BacklogNodeViewModel">
+                                <!-- A Grid, not a StackPanel: a horizontal StackPanel gives
+                                     every child its desired width, so the title never trims
+                                     and the whole rail pans sideways instead. -->
+                                <Grid ColumnDefinitions="Auto,*,Auto"
+                                      ColumnSpacing="{StaticResource SpacingS}"
+                                      Margin="{StaticResource ListItemMargin}">
+                                    <Border Grid.Column="0" Classes="badge" Classes.solid="{Binding IsEpic}">
+                                        <TextBlock Classes="onAccent" Text="{Binding Badge}" />
+                                    </Border>
+                                    <TextBlock Grid.Column="1" Text="{Binding DisplayTitle}" Classes="body"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding Title}" />
+                                    <TextBlock Grid.Column="2" Classes="icon" Text="!"
+                                               Foreground="{DynamicResource ValidationErrorBrush}"
+                                               IsVisible="{Binding HasProblems}"
+                                               ToolTip.Tip="{Binding ProblemSummary}" />
+                                </Grid>
+                            </TreeDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
+                </DockPanel>
+            </Border>
+
+            <!-- =========================== Content ========================== -->
+            <Grid Grid.Row="0" Grid.Column="2" RowDefinitions="Auto,*">
+
+                <!-- Header -->
+                <Border Grid.Row="0" Padding="{StaticResource HeaderPadding}"
+                        BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,0,0,1">
+                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource SpacingM}">
+                        <StackPanel Grid.Column="0" Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="{Binding CurrentSection.Name}" Classes="title" />
+                            <TextBlock Classes="caption" TextWrapping="Wrap"
+                                       Text="{Binding CurrentSection.Caption}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                    Spacing="{StaticResource SpacingS}"
+                                    IsVisible="{Binding HasBacklog}">
+                            <!-- Glyph + label, never colour alone (§5.3): an
+                                 unsaved buffer is a state, not a decoration. -->
+                            <Border Classes="chip" IsVisible="{Binding HasUnsavedEdits}"
+                                    ToolTip.Tip="The editor holds changes the backlog file does not. Save (Ctrl+S) before generating a Plan.">
+                                <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingXS}">
+                                    <TextBlock Classes="icon" Text="●"
+                                               Foreground="{DynamicResource PlanUpdateBrush}" />
+                                    <TextBlock Classes="caption" Text="Unsaved edits" />
+                                </StackPanel>
+                            </Border>
+                            <Border Classes="badge"
+                                    Classes.ok="{Binding !HasProblems}"
+                                    Classes.error="{Binding HasProblems}">
+                                <TextBlock Classes="onAccent" Text="{Binding MarkupSummary}" />
+                            </Border>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- Body -->
+                <Panel Grid.Row="1">
+
+                    <!-- Error -->
+                    <StackPanel Classes="statePanel" IsVisible="{Binding HasError}">
+                        <TextBlock Classes="stateTitle" Text="Could not open that profile" />
+                        <TextBlock Classes="error" Text="{Binding ErrorText}"
+                                   TextAlignment="Center" />
+                        <Button Classes="quiet" Content="Open another…"
+                                HorizontalAlignment="Center" Click="OnOpenClick" />
+                    </StackPanel>
+
+                    <!-- No profile open yet: offer both routes in. -->
+                    <views:OnboardingView x:Name="OnboardingPane"
+                                          IsVisible="{Binding ShowOnboarding}" />
+
+                    <!-- The Plan/Apply gate. -->
+                    <views:PlanView IsVisible="{Binding ShowPlan}" />
+
+                    <!-- Read-only drift, and the only sanctioned route from a
+                         finding to the Plan that fixes it. -->
+                    <views:AuditView IsVisible="{Binding ShowAudit}" />
+
+                    <!-- A section this slice does not deliver. Naming the ticket is
+                         more use than an empty pane that looks broken. -->
+                    <StackPanel Classes="statePanel"
+                                IsVisible="{Binding ShowPlanned}">
+                        <TextBlock Classes="stateTitle" Text="{Binding CurrentSection.Name}" />
+                        <TextBlock Classes="stateBody" Text="{Binding CurrentSection.PlannedDetail}" />
+                        <Border Classes="chip" HorizontalAlignment="Center">
+                            <TextBlock Classes="caption" Text="Not built yet" />
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Nothing selected -->
+                    <StackPanel Classes="statePanel">
+                        <StackPanel.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="ShowBacklog" />
+                                <Binding Path="SelectedNode"
+                                         Converter="{x:Static conv:ObjectConverters.IsNull}" />
+                            </MultiBinding>
+                        </StackPanel.IsVisible>
+                        <TextBlock Classes="stateTitle" Text="Nothing selected" />
+                        <TextBlock Classes="stateBody"
+                                   Text="Pick an Epic or an Issue in the backlog rail to see its source and the markup it converts to." />
+                    </StackPanel>
+
+                    <!-- The split editor. DESIGN-SYSTEM §1.3: the preview is the
+                         product, so it gets an equal half, not a side panel. -->
+                    <Grid Margin="{StaticResource PagePadding}"
+                          RowDefinitions="Auto,*,Auto"
+                          DataContext="{Binding SelectedNode}"
+                          x:DataType="vm:BacklogNodeViewModel">
+                        <Grid.IsVisible>
+                            <MultiBinding Converter="{x:Static BoolConverters.And}">
+                                <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).ShowBacklog" />
+                                <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).SelectedNode"
+                                         Converter="{x:Static conv:ObjectConverters.IsNotNull}" />
+                            </MultiBinding>
+                        </Grid.IsVisible>
+
+                        <!-- Item header -->
+                        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingS}"
+                                    Margin="{StaticResource SectionHeaderMargin}">
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                                <Border Classes="badge" Classes.solid="{Binding IsEpic}">
+                                    <TextBlock Classes="onAccent" Text="{Binding Badge}" />
+                                </Border>
+                                <TextBlock Text="{Binding DisplayTitle}" Classes="title"
+                                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                            </StackPanel>
+                            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingChip}">
+                                <Border Classes="chip">
+                                    <TextBlock Classes="caption" Text="{Binding Detail}" />
+                                </Border>
+                                <Border Classes="chip" IsVisible="{Binding IsDirty}"
+                                        ToolTip.Tip="This description differs from the backlog file until you save.">
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingXS}">
+                                        <TextBlock Classes="icon" Text="●"
+                                                   Foreground="{DynamicResource PlanUpdateBrush}" />
+                                        <TextBlock Classes="caption" Text="unsaved" />
+                                    </StackPanel>
+                                </Border>
+                                <Border Classes="chip">
+                                    <TextBlock Classes="caption" Text="{Binding ProblemSummary}" />
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+
+                        <!-- Source | Generated markup -->
+                        <Grid Grid.Row="1" ColumnDefinitions="*,6,*">
+                            <Border Grid.Column="0" Classes="pane">
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Top" Classes="paneHeader">
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              ColumnSpacing="{StaticResource SpacingM}">
+                                            <StackPanel Grid.Column="0" Spacing="{StaticResource SpacingTight}">
+                                                <TextBlock Text="Source" Classes="sectionTitle" />
+                                                <TextBlock Classes="caption" TextWrapping="Wrap"
+                                                           Text="Edit the description here. The pane beside it shows exactly what the board would receive." />
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Content="Save"
+                                                    VerticalAlignment="Center"
+                                                    Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveCommand}"
+                                                    IsEnabled="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).HasUnsavedEdits}"
+                                                    ToolTip.Tip="Write the edited descriptions back to the backlog file (Ctrl+S)." />
+                                        </Grid>
+                                    </Border>
+                                    <!-- Wrapped, not clipped: the pane is half the
+                                         content column, and a backlog line is
+                                         routinely wider than that. Editable: this
+                                         buffer splices back into the file on Save. -->
+                                    <TextBox Classes="editor editable" Text="{Binding Source, Mode=TwoWay}"
+                                             TextWrapping="Wrap" />
+                                </DockPanel>
+                            </Border>
+
+                            <GridSplitter Grid.Column="1" ResizeDirection="Columns" />
+
+                            <Border Grid.Column="2" Classes="pane">
+                                <DockPanel>
+                                    <Border DockPanel.Dock="Top" Classes="paneHeader">
+                                        <Grid ColumnDefinitions="*,Auto"
+                                              ColumnSpacing="{StaticResource SpacingM}">
+                                            <StackPanel Grid.Column="0" Spacing="{StaticResource SpacingTight}">
+                                                <TextBlock Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MarkupPaneTitle}" Classes="sectionTitle" />
+                                                <TextBlock Classes="caption" TextWrapping="Wrap"
+                                                           Text="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).MarkupPaneCaption}" />
+                                            </StackPanel>
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        Spacing="{StaticResource SpacingS}"
+                                                        VerticalAlignment="Center">
+                                                <!-- Two-way, with no Click handler: the group's own
+                                                     coordination raises Click while the view loads, which
+                                                     flipped the pane to HTML before the user touched it. -->
+                                                <RadioButton GroupName="MarkupView" Content="Preview"
+                                                             IsChecked="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowRenderedPreview, Mode=TwoWay}" />
+                                                <RadioButton GroupName="MarkupView" Content="HTML"
+                                                             IsChecked="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowGeneratedMarkup, Mode=TwoWay}" />
+                                            </StackPanel>
+                                        </Grid>
+                                    </Border>
+
+                                    <ScrollViewer IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowRenderedPreview}"
+                                                  Padding="{StaticResource PreviewPadding}">
+                                        <views:PreviewPane Document="{Binding Preview}" />
+                                    </ScrollViewer>
+
+                                    <TextBox Classes="editor" Text="{Binding FormattedHtml, Mode=OneWay}"
+                                             TextWrapping="Wrap"
+                                             IsVisible="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).ShowGeneratedMarkup}" />
+                                </DockPanel>
+                            </Border>
+                        </Grid>
+
+                        <!-- Problems. Glyph + label, never colour alone (§5.3). -->
+                        <Border Grid.Row="2" Classes="card" Margin="0,12,0,0"
+                                BorderBrush="{DynamicResource ValidationErrorBrush}"
+                                IsVisible="{Binding HasProblems}">
+                            <StackPanel Spacing="{StaticResource SpacingS}">
+                                <TextBlock Text="Markup problems — Apply would be blocked"
+                                           Classes="sectionTitle" />
+                                <ItemsControl ItemsSource="{Binding Problems}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="vm:MarkupProblem">
+                                            <StackPanel Orientation="Horizontal"
+                                                        Spacing="{StaticResource SpacingS}"
+                                                        Margin="0,0,0,4">
+                                                <TextBlock Classes="icon" Text="!"
+                                                           Foreground="{DynamicResource ValidationErrorBrush}" />
+                                                <TextBlock Text="{Binding Display}" Classes="body"
+                                                           TextWrapping="Wrap" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </Grid>
+                </Panel>
+            </Grid>
+
+            <!-- ============================ Footer ========================== -->
+            <Border Grid.Row="1" Grid.ColumnSpan="3"
+                    Background="{DynamicResource SidebarBackgroundBrush}"
+                    BorderBrush="{DynamicResource CardBorderBrush}" BorderThickness="0,1,0,0"
+                    Padding="{StaticResource FooterPadding}">
+                <Grid ColumnDefinitions="*,Auto">
+                    <TextBlock Grid.Column="0" Text="{Binding StatusText}" Classes="caption"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                    <!-- This build can write, so the footer must not claim otherwise.
+                         What is still true is the gate: a Plan only reads, and a
+                         write needs an explicit confirmation. -->
+                    <TextBlock Grid.Column="1" Classes="caption"
+                               Text="Generating a Plan only reads. Nothing is written until you confirm an Apply." />
+                </Grid>
+            </Border>
+
+        </Grid>
+    </Border>
+</Window>

@@ -1,0 +1,16 @@
+<Project>
+
+  <!--
+    Imported after each test csproj, so `IsTestProject` reflects what the project
+    itself declared. `AdoBoardSync.TestKit` opts out (IsTestProject=false): it is a
+    shared helper library with no tests, and giving it the xunit using without the
+    package is what broke the Release build (GAPS: testkit-inherits-xunit-using).
+  -->
+  <ItemGroup Condition="'$(IsTestProject)' == 'true'">
+    <Using Include="Xunit" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+</Project>

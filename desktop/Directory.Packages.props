@@ -1,0 +1,50 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- One Avalonia line for the whole solution: every Avalonia package moves in
+         lockstep or the runtime binds a mismatched pair. ARCHITECTURE.md §8 records
+         the pin; changing it here changes it everywhere.
+
+         Why 12.1.x and not 11.x: Avalonia 11.3.7 resolves a vulnerable
+         Tmds.DBus.Protocol 0.21.2 and fails `dotnet restore` with NU1903 under this
+         repository's TreatWarningsAsErrors. 12.1.1 resolves 0.94.1 and restores
+         clean, with no suppression to remember to remove later. -->
+    <AvaloniaVersion>12.1.1</AvaloniaVersion>
+  </PropertyGroup>
+
+  <ItemGroup Label="Application">
+    <PackageVersion Include="Avalonia" Version="$(AvaloniaVersion)" />
+    <PackageVersion Include="Avalonia.Desktop" Version="$(AvaloniaVersion)" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="$(AvaloniaVersion)" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="$(AvaloniaVersion)" />
+    <PackageVersion Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3" />
+    <PackageVersion Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+    <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup Label="Transitive pins">
+    <!--
+      Microsoft.Data.Sqlite 10.0.0 resolves SQLitePCLRaw 2.1.11, whose native
+      library carries a known high-severity advisory (GHSA-2m69-gcr7-jv3q). With
+      TreatWarningsAsErrors on, NU1903 fails the build rather than warning — which
+      is the gate working. Transitive pinning is enabled in Directory.Build.props,
+      so naming the fixed 2.1.x here lifts the whole graph without waiting for a
+      new Microsoft.Data.Sqlite. Staying on 2.1.x rather than 3.x keeps the ABI
+      Microsoft.Data.Sqlite 10.0.0 was built against.
+
+      Remove these two lines once Microsoft.Data.Sqlite ships a version that
+      resolves 2.1.13 or later on its own.
+    -->
+    <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
+    <PackageVersion Include="SQLitePCLRaw.lib.e_sqlite3" Version="2.1.13" />
+  </ItemGroup>
+
+  <ItemGroup Label="Test">
+    <PackageVersion Include="Avalonia.Headless" Version="$(AvaloniaVersion)" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageVersion Include="xunit" Version="2.9.3" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+</Project>

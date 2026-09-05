@@ -3,7 +3,7 @@ import argparse
 import sys
 
 from . import client as client_mod
-from . import commands, config, parser
+from . import commands, config, gitstate, parser
 
 
 def _build_parser():
@@ -32,7 +32,7 @@ def _build_parser():
     rt = add("resync-tasks", "Reconcile each Issue's child Tasks to backlog bullets", go=True)
     rt.add_argument(
         "code", nargs="?",
-        help="reconcile only this Issue's Tasks, for example DDI-803 (default: every Issue)",
+        help="reconcile only this Issue's Tasks, for example PROJ-101 (default: every Issue)",
     )
     cc = add("close-children", "Set child Tasks to Done for every Issue already Done", go=True)
     cc.add_argument(
@@ -44,7 +44,7 @@ def _build_parser():
     add("audit", "Read-only: verify the board matches the backlog (exit 1 on drift)")
     add("sync", "gen-csv -> import -> resync -> resync-tasks -> audit", go=True)
     one = add("sync-one", "Create or update one Issue and set one Sprint; never changes Tasks or assignees", go=True)
-    one.add_argument("code", help="Issue code, for example DDI-1028")
+    one.add_argument("code", help="Issue code, for example PROJ-101")
     one.add_argument("--sprint", required=True, help="Existing sprint iteration name")
 
     sp = add("sprints", "Create sprint iterations and assign Issues (+ Tasks) to them", go=True)
@@ -69,6 +69,32 @@ def _build_parser():
     ap.add_argument(
         "--only-unassigned", action="store_true",
         help="only set an assignee where none is set; never overwrite an existing one",
+    )
+
+    ss = add("set-state", "Set one or more work items' state directly by id (e.g. close stragglers)", go=True)
+    ss.add_argument("ids", nargs="+", type=int, metavar="ID")
+    ss.add_argument(
+        "--state", default=None,
+        help="target state (default: the configured terminal state, states.done)",
+    )
+    ss.add_argument(
+        "--no-tick", action="store_true",
+        help="do not tick a leading '[ ]' title checkbox when the target state is done",
+    )
+
+    adv = add(
+        "advance",
+        "Move Issues with commit evidence on local branches from states.todo to states.doing",
+        go=True,
+    )
+    adv.add_argument(
+        "--repo", action="append", required=True,
+        help="repository path to probe (repeat for several)",
+    )
+    adv.add_argument("--base", default="origin/main", help="base ref commits are counted against")
+    adv.add_argument(
+        "--no-fetch", action="store_true",
+        help="skip git fetch before probing (refs may be stale)",
     )
     return p
 
@@ -122,6 +148,10 @@ def main(argv=None):
         return commands.audit(cfg, client, args)
     if args.cmd == "sync-one":
         return commands.sync_one(cfg, client, args)
+    if args.cmd == "set-state":
+        return commands.set_state(cfg, client, args)
+    if args.cmd == "advance":
+        return gitstate.advance(cfg, client, args)
 
     return 1
 

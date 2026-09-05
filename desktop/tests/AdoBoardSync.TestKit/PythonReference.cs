@@ -34,6 +34,14 @@ public static class PythonReference
     public static JsonDocument WithConfig(string mode, string configPath) =>
         JsonDocument.Parse(Run(mode, input: null, ["--config", configPath]));
 
+    /// <summary>
+    /// Runs the <c>apply</c> mode: a board on stdin and a command in the flags,
+    /// returning the board that command left behind. This is the plan-computation
+    /// reference — the only mode that takes both an input document and flags.
+    /// </summary>
+    public static JsonDocument Apply(string board, params string[] arguments) =>
+        JsonDocument.Parse(Run("apply", board, arguments));
+
     private static string Run(string mode, string? input, string[] arguments)
     {
         var info = new ProcessStartInfo(Interpreter)

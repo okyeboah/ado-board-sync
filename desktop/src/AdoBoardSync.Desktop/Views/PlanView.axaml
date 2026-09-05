@@ -1,0 +1,240 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:planning="using:AdoBoardSync.Core.Planning"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.PlanView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="{StaticResource PagePadding}">
+
+        <!-- ============================ Controls =========================== -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}">
+
+            <!-- Command. FSD §3.3: one surface serves every mutating command, and
+                 each states its scope and whether `sync` already runs it. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <TextBlock Text="Command" Classes="fieldLabel" />
+                <ListBox ItemsSource="{Binding BoardPlan.Commands}"
+                         SelectedItem="{Binding BoardPlan.SelectedCommand, Mode=TwoWay}"
+                         IsEnabled="{Binding !BoardPlan.IsBusy}"
+                         MaxHeight="196">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate x:DataType="vm:PlanCommandOption">
+                            <Grid ColumnDefinitions="160,*,Auto"
+                                  ColumnSpacing="{StaticResource SpacingS}">
+                                <TextBlock Grid.Column="0" Classes="body" Text="{Binding Name}" />
+                                <TextBlock Grid.Column="1" Classes="caption"
+                                           Text="{Binding Scope}" TextTrimming="CharacterEllipsis" />
+                                <Border Grid.Column="2" Classes="chip">
+                                    <TextBlock Classes="caption" Text="{Binding ChainNote}" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </StackPanel>
+
+            <!-- The CODE argument sync-one requires and resync-tasks may take. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        IsVisible="{Binding BoardPlan.NeedsCode}">
+                <TextBlock Text="Issue code" Classes="fieldLabel" />
+                <TextBox Classes="field" Text="{Binding BoardPlan.IssueCode, Mode=TwoWay}"
+                         PlaceholderText="PROJ-101" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="Typed, not taken from the tree selection: the CLI takes it as an argument, and a Plan that quietly applied to whatever was selected would not be the one you asked for. Leave it blank for resync-tasks to reconcile every Issue." />
+            </StackPanel>
+
+            <!-- The sprint sync-one puts the Issue in. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        IsVisible="{Binding BoardPlan.NeedsSprint}">
+                <TextBlock Text="Sprint" Classes="fieldLabel" />
+                <TextBox Classes="field" Text="{Binding BoardPlan.SprintName, Mode=TwoWay}" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="One of the iterations named in the profile. A name that is not there is refused before anything is read." />
+            </StackPanel>
+
+            <!-- Per-command options. Each is shown only for the commands that read it. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        IsVisible="{Binding BoardPlan.HasOptions}">
+                <TextBlock Text="Options" Classes="fieldLabel" />
+                <CheckBox Content="Also move child Tasks"
+                          IsVisible="{Binding BoardPlan.SelectedCommand.SupportsIncludeTasks}"
+                          IsChecked="{Binding BoardPlan.IncludeTasks, Mode=TwoWay}" />
+                <CheckBox Content="Only set iteration paths — do not create the sprint nodes"
+                          IsVisible="{Binding BoardPlan.SelectedCommand.SupportsAssignOnly}"
+                          IsChecked="{Binding BoardPlan.AssignOnly, Mode=TwoWay}" />
+                <CheckBox Content="Never overwrite an assignee somebody already set"
+                          IsVisible="{Binding BoardPlan.SelectedCommand.SupportsOnlyUnassigned}"
+                          IsChecked="{Binding BoardPlan.OnlyUnassigned, Mode=TwoWay}" />
+                <CheckBox Content="Copy the Done parent's assignee onto items it closes that have none"
+                          IsVisible="{Binding BoardPlan.SelectedCommand.SupportsAssignFromParent}"
+                          IsChecked="{Binding BoardPlan.AssignFromParent, Mode=TwoWay}" />
+            </StackPanel>
+
+            <!-- Credential -->
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <TextBlock Text="Personal access token" Classes="fieldLabel" />
+                <TextBox Classes="field" PasswordChar="●"
+                         Text="{Binding BoardPlan.SessionToken, Mode=TwoWay}" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="Leave blank to use the environment variable or token file named in the profile. A token typed here is held for this session only — never written to disk, the profile or a log. It needs Work Items (Read &amp; write) scope." />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="{Binding BoardPlan.CredentialStatus}"
+                           IsVisible="{Binding BoardPlan.CredentialStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+
+            <!-- Generate is quiet: read-only and safe to press repeatedly. Apply is
+                 the only accent action on the page. -->
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="quiet" Content="Generate Plan"
+                        Click="OnGenerate" IsEnabled="{Binding !BoardPlan.IsBusy}" />
+                <Button Classes="accent" Content="Apply…"
+                        Click="OnRequestApply"
+                        IsVisible="{Binding BoardPlan.HasWork}"
+                        IsEnabled="{Binding !BoardPlan.IsBusy}" />
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding BoardPlan.StatusText}" />
+            </StackPanel>
+
+            <ProgressBar Classes="loaderStrip" IsVisible="{Binding BoardPlan.IsBusy}" />
+
+            <TextBlock Classes="error" Text="{Binding BoardPlan.ErrorText}"
+                       IsVisible="{Binding BoardPlan.HasError}" />
+
+            <!-- What the Plan Builder could not place: a configured code that is not
+                 on the board, a board Issue with no sprint. Not errors — the Plan is
+                 still valid — but silence about them would hide a misconfiguration. -->
+            <Border Classes="card" IsVisible="{Binding BoardPlan.HasNotes}">
+                <StackPanel Spacing="{StaticResource SpacingXS}">
+                    <TextBlock Classes="fieldLabel" Text="Worth knowing" />
+                    <ItemsControl ItemsSource="{Binding BoardPlan.Notes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Classes="caption" Text="{Binding}" TextWrapping="Wrap" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+
+            <!-- A write never happens on the first click. -->
+            <Border Classes="card" IsVisible="{Binding BoardPlan.IsConfirming}"
+                    BorderBrush="{DynamicResource AppAccentBrush}">
+                <StackPanel Spacing="{StaticResource SpacingS}">
+                    <TextBlock Classes="sectionTitle" Text="{Binding BoardPlan.ConfirmQuestion}" />
+                    <TextBlock Classes="detail" TextWrapping="Wrap"
+                               Text="This writes to the live board. The Plan is re-checked against the backlog and the board first, and is refused if either has changed since you generated it." />
+                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                        <Button Classes="accent" Content="Apply to Azure DevOps" Click="OnConfirmApply" />
+                        <Button Classes="quiet" Content="Cancel" Click="OnCancelApply" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- ============================= Results =========================== -->
+        <Grid Grid.Row="1" RowDefinitions="Auto,*">
+
+            <!-- No profile -->
+            <StackPanel Grid.Row="1" Classes="statePanel" IsVisible="{Binding !HasProfile}">
+                <TextBlock Classes="stateTitle" Text="No board profile open" />
+                <TextBlock Classes="stateBody"
+                           Text="Open a profile in the Backlog section first. A Plan compares that backlog against the board it names." />
+            </StackPanel>
+
+            <!-- Outcomes take over once an Apply has run. -->
+            <DockPanel Grid.Row="1" IsVisible="{Binding BoardPlan.HasOutcomes}">
+                <TextBlock DockPanel.Dock="Top" Text="Applied" Classes="sectionTitle"
+                           Margin="{StaticResource SectionHeaderMargin}" />
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding BoardPlan.Outcomes}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="planning:ApplyOutcome">
+                                <Border Classes="planRow">
+                                    <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                                        <Border Classes="badge"
+                                                Classes.ok="{Binding Succeeded}"
+                                                Classes.error="{Binding !Succeeded}">
+                                            <TextBlock Classes="onAccent"
+                                                       Text="{Binding Row.Badge}" />
+                                        </Border>
+                                        <TextBlock Classes="body" VerticalAlignment="Center"
+                                                   Text="{Binding Row.Title}"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Classes="caption" VerticalAlignment="Center"
+                                                   Text="{Binding Message}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- The Plan itself. -->
+            <DockPanel Grid.Row="1">
+                <DockPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasProfile" />
+                        <Binding Path="BoardPlan.HasPlan" />
+                        <Binding Path="!BoardPlan.HasOutcomes" />
+                    </MultiBinding>
+                </DockPanel.IsVisible>
+
+                <TextBlock DockPanel.Dock="Top" Text="{Binding BoardPlan.PlanSummary}"
+                           Classes="sectionTitle" Margin="{StaticResource SectionHeaderMargin}" />
+
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding BoardPlan.Rows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="planning:PlanRow">
+                                <Border Classes="planRow"
+                                        Classes.destructive="{Binding IsDelete}">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto"
+                                          ColumnSpacing="{StaticResource SpacingS}">
+                                        <!-- Glyph + word + fill together, never fill alone. -->
+                                        <Border Grid.Column="0" Classes="badge"
+                                                Classes.create="{Binding IsCreate}"
+                                                Classes.update="{Binding IsUpdate}"
+                                                Classes.delete="{Binding IsDelete}"
+                                                Classes.unchanged="{Binding IsUnchanged}">
+                                            <TextBlock Classes="onAccent" Text="{Binding OperationText}" />
+                                        </Border>
+                                        <Border Grid.Column="1" Classes="badge"
+                                                Classes.solid="{Binding IsEpic}">
+                                            <TextBlock Classes="onAccent" Text="{Binding Badge}" />
+                                        </Border>
+                                        <TextBlock Grid.Column="2" Classes="body" VerticalAlignment="Center"
+                                                   Text="{Binding Title}" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding Title}" />
+                                        <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                                    Spacing="{StaticResource SpacingChip}"
+                                                    VerticalAlignment="Center">
+                                            <TextBlock Classes="caption" Text="{Binding ChangeSummary}" />
+                                            <TextBlock Classes="caption" Text="{Binding BoardReference}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </DockPanel>
+
+            <!-- Nothing generated yet. -->
+            <StackPanel Grid.Row="1" Classes="statePanel">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasProfile" />
+                        <Binding Path="!BoardPlan.HasPlan" />
+                        <Binding Path="!BoardPlan.HasOutcomes" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+                <TextBlock Classes="stateTitle" Text="No Plan yet" />
+                <TextBlock Classes="stateBody"
+                           Text="Generating a Plan reads the board and shows exactly what would change. It writes nothing — you can press it as often as you like." />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

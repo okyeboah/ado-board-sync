@@ -15,25 +15,48 @@ dist/
 # .NET (desktop app)
 bin/
 obj/
+
+# Publish and packaging output (ABSD-601/602). A self-contained build is ~110 MB
+# per runtime identifier; these are release artifacts, not source.
+desktop/artifacts/
 *.user
 TestResults/
+
+# Real board profiles and scratch backlogs — these name a live organisation
+desktop/local/
+*.local.json
+
+# IDE workspace state — per-developer, never shared
+.idea/
+.vs/
+*.DotSettings.user
 
 # Local presentation — not part of the package
 presentation.html
 
-# Ruflo local secrets and runtime data
+# Local secrets
 .env
 .env.local
 .env.*.local
-.claude-flow/data/
-.claude-flow/logs/
-.claude-flow/sessions/
 
+# Local AI tooling. The portable agent setup is local to each workstation, so
+# the adapter stubs and harness state are never committed.
 .claude/
+.mcp.json
+# Anchored: desktop/AGENTS.md is tracked project documentation, not an adapter.
+/AGENTS.md
+/CLAUDE.md
+
+# Retired harness (ruflo, removed 2026-09-03). These stay as re-introduction
+# guards: a stray `ruflo init` re-creates them, and committing them would put a
+# second hook system back in the repo. See .agents/skills/ruflo/.
 .claude-flow/
 .swarm/
-.agents/
-.mcp.json
 ruvector.db
-CLAUDE.md
+
+# Project-scoped agent skills are committed; everything else under .agents is local.
+.agents/*
+!.agents/skills/
+!.agents/skills/**
 uv.lock
+.stele-context/

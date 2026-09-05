@@ -1,5 +1,6 @@
 using AdoBoardSync.Core.Backlog;
 using AdoBoardSync.Core.Configuration;
+using AdoBoardSync.TestKit;
 
 namespace AdoBoardSync.Core.Tests;
 
@@ -217,5 +218,65 @@ public class BacklogParserTests
 
         Assert.Equal(["PROJ-101", "PROJ-102"], tasks.Keys.OrderBy(k => k, StringComparer.Ordinal));
         Assert.Empty(tasks["PROJ-102"]);
+    }
+
+    [Fact]
+    public void EveryItemCarriesTheRangeOfItsDescriptionBlock()
+    {
+        // Line indices into the split text: the block starts at the first
+        // description line (leading blanks belong to the gap) and ends where the
+        // next heading begins. BacklogSplicer saves through these ranges, so the
+        // editor's splice can never disagree with the parse about what is inside.
+        var items = BacklogParser.Parse(Config(), """
+            ## Epic 1 — First
+            ### PROJ-101 · Issue
+            - a task
+            desc line
+
+            ### PROJ-102 · Second
+            """);
+
+        Assert.Collection(
+            items,
+            epic =>
+            {
+                Assert.Equal(BacklogLevel.Epic, epic.Level);
+                Assert.Equal(1, epic.DescriptionStart);
+                Assert.Equal(1, epic.DescriptionEnd);
+            },
+            first =>
+            {
+                Assert.Equal(2, first.DescriptionStart);
+                Assert.Equal(5, first.DescriptionEnd);
+            },
+            last =>
+            {
+                Assert.Equal(6, last.DescriptionStart);
+                Assert.Equal(6, last.DescriptionEnd);
+            });
+    }
+
+    [Fact]
+    public void LeadingBlanksBelongToTheGapNotTheBlock()
+    {
+        var items = BacklogParser.Parse(Config(), "## Epic 1 — First\n\n\nFirst real line.\n");
+
+        var item = items.Single();
+        Assert.Equal(3, item.DescriptionStart);
+        Assert.Equal(4, item.DescriptionEnd);
+    }
+
+    [Fact]
+    public void TheDescriptionRangeCoversExactlyTheDescriptionLines()
+    {
+        var markdown = File.ReadAllText(RepoPaths.Fixture("backlog", "standard.md"));
+        var lines = Core.PythonCompat.SplitLines(markdown).ToList();
+
+        foreach (var item in BacklogParser.Parse(Config(), markdown))
+        {
+            Assert.Equal(
+                item.DescriptionLines,
+                lines.Skip(item.DescriptionStart).Take(item.DescriptionEnd - item.DescriptionStart).ToList());
+        }
     }
 }

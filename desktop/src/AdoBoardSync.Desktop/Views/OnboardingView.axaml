@@ -1,0 +1,122 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.OnboardingView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <ScrollViewer>
+        <StackPanel Margin="{StaticResource PagePadding}" Spacing="{StaticResource SpacingL}"
+                    MaxWidth="920" HorizontalAlignment="Center">
+
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <TextBlock Text="Open a board" Classes="title" />
+                <TextBlock Classes="detail" TextWrapping="Wrap"
+                           Text="Both routes end in the same validated profile. Pick whichever you have to hand — a config file, or the details themselves." />
+            </StackPanel>
+
+            <Grid ColumnDefinitions="*,16,*">
+
+                <!-- ================= Route 1: an existing config ================ -->
+                <Border Grid.Column="0" Classes="card" VerticalAlignment="Top">
+                    <StackPanel Spacing="{StaticResource SpacingM}">
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="I have a board.config.json" Classes="sectionTitle" />
+                            <TextBlock Classes="detail" TextWrapping="Wrap"
+                                       Text="The same file the command-line tool uses. Nothing about it changes by opening it here." />
+                        </StackPanel>
+                        <Button Classes="quiet" Content="Open board.config.json…"
+                                HorizontalAlignment="Stretch" Click="OnOpenExisting" />
+                        <TextBlock Classes="error" TextWrapping="Wrap"
+                                   Text="{Binding Onboarding.ImportErrorText}"
+                                   IsVisible="{Binding Onboarding.HasImportError}" />
+                    </StackPanel>
+                </Border>
+
+                <!-- ================= Route 2: describe one here ================= -->
+                <Border Grid.Column="2" Classes="card">
+                    <StackPanel Spacing="{StaticResource SpacingM}">
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="I don't have one yet" Classes="sectionTitle" />
+                            <TextBlock Classes="detail" TextWrapping="Wrap"
+                                       Text="Describe the board and pick a backlog file. Saving it as a config file afterwards is optional." />
+                        </StackPanel>
+
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="Organization" Classes="fieldLabel" />
+                            <TextBox Classes="field"
+                                     Text="{Binding Onboarding.Organisation, Mode=TwoWay}" />
+                            <TextBlock Classes="caption" TextWrapping="Wrap"
+                                       Text="The name in your board's URL, after dev.azure.com/." />
+                        </StackPanel>
+
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="Project" Classes="fieldLabel" />
+                            <TextBox Classes="field"
+                                     Text="{Binding Onboarding.Project, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="Issue code prefix" Classes="fieldLabel" />
+                            <TextBox Classes="field"
+                                     Text="{Binding Onboarding.CodePrefix, Mode=TwoWay}" />
+                            <TextBlock Classes="caption" TextWrapping="Wrap"
+                                       Text="The letters before the hyphen in your issue codes. This is how a backlog Issue is matched to a board work item." />
+                        </StackPanel>
+
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="Backlog file" Classes="fieldLabel" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource SpacingS}">
+                                <Border Grid.Column="0" Classes="chip" HorizontalAlignment="Stretch">
+                                    <TextBlock Classes="caption" Text="{Binding Onboarding.BacklogDisplay}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding Onboarding.BacklogDisplay}" />
+                                </Border>
+                                <Button Grid.Column="1" Classes="quiet" Content="Choose…"
+                                        Click="OnChooseBacklog" />
+                            </Grid>
+                            <StackPanel Spacing="{StaticResource SpacingXS}"
+                                        IsVisible="{Binding Onboarding.CanScaffold}">
+                                <CheckBox Content="Create a starter backlog at this path"
+                                          IsChecked="{Binding Onboarding.ScaffoldStarterBacklog, Mode=TwoWay}" />
+                                <TextBlock Classes="caption" TextWrapping="Wrap"
+                                           Text="No file is there yet. Ticked, opening the board writes a small working backlog — one epic, one issue, two tasks — that you can edit straight away. Unticked, a missing file is an error, as in the CLI." />
+                            </StackPanel>
+                        </StackPanel>
+
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <TextBlock Text="Team (optional)" Classes="fieldLabel" />
+                            <TextBox Classes="field"
+                                     Text="{Binding Onboarding.Team, Mode=TwoWay}" />
+                        </StackPanel>
+
+                        <StackPanel Spacing="{StaticResource SpacingXS}">
+                            <CheckBox Content="Also save this as a board.config.json"
+                                      IsChecked="{Binding Onboarding.AlsoSaveToDisk, Mode=TwoWay}" />
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="{StaticResource SpacingS}"
+                                  IsVisible="{Binding Onboarding.AlsoSaveToDisk}">
+                                <TextBox Grid.Column="0" Classes="field"
+                                         Text="{Binding Onboarding.SavePath, Mode=TwoWay}" />
+                                <Button Grid.Column="1" Classes="quiet" Content="Choose…"
+                                        Click="OnChooseSavePath" />
+                            </Grid>
+                            <TextBlock Classes="caption" IsVisible="{Binding Onboarding.AlsoSaveToDisk}"
+                                       TextWrapping="Wrap"
+                                       Text="Saving lets the command-line tool share this profile. The token is never written to it." />
+                        </StackPanel>
+
+                        <TextBlock Classes="error" Text="{Binding Onboarding.ErrorText}"
+                                   IsVisible="{Binding Onboarding.HasError}" />
+
+                        <Button Classes="accent" Content="Open this board"
+                                HorizontalAlignment="Stretch"
+                                IsEnabled="{Binding Onboarding.CanCreate}"
+                                Click="OnCreateProfile" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <TextBlock Classes="caption" TextWrapping="Wrap" HorizontalAlignment="Center"
+                       Text="Opening a board reads the backlog file only. No credential is needed until you generate a Plan, and nothing is written to Azure DevOps until you confirm an Apply." />
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

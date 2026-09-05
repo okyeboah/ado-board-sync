@@ -3,17 +3,65 @@
 The PAT is held only inside the Basic auth header and is never logged.
 """
 import base64
+import http.client
 import json
+import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
 
 
 class Client:
     def __init__(self, cfg, pat):
         self.cfg = cfg
         self._auth = "Basic " + base64.b64encode(f":{pat}".encode()).decode()
+        # Every request in one run targets the same host (dev.azure.com), so one
+        # keep-alive connection is reused across the whole command instead of paying a
+        # fresh TCP+TLS handshake per call. That per-call handshake -- not packet loss --
+        # is what makes a multi-hundred-item sync feel slow even on a healthy network:
+        # commands like resync-tasks/sprints/assign issue dozens to hundreds of sequential
+        # requests, and each one used to open and tear down its own connection.
+        #
+        # The connection is stored per thread (http.client connections are not
+        # thread-safe): concurrent apply phases hand each worker thread its own socket,
+        # and every one of them still reuses it across all of that thread's requests.
+        self._local = threading.local()
+
+    def close(self):
+        """Release this thread's keep-alive connection, if one is open."""
+        conn = getattr(self._local, "conn", None)
+        if conn is not None:
+            conn.close()
+        self._local.conn = None
+        self._local.key = None
+
+    def _connection(self, scheme, netloc, timeout):
+        key = (scheme, netloc, timeout)
+        conn = getattr(self._local, "conn", None)
+        if conn is not None and getattr(self._local, "key", None) != key:
+            self.close()
+            conn = None
+        if conn is None:
+            cls = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+            conn = cls(netloc, timeout=timeout)
+            self._local.conn = conn
+            self._local.key = key
+        return conn
+
+    @staticmethod
+    def _backoff(attempt, backoff):
+        return backoff * (2 ** attempt)
+
+    @staticmethod
+    def _retry_delay(status, resp, attempt, backoff):
+        """Seconds to wait before retrying a retriable non-2xx response."""
+        if status == 429:
+            retry_after = resp.getheader("Retry-After")
+            if retry_after:
+                try:
+                    return float(retry_after)
+                except ValueError:
+                    pass
+        return Client._backoff(attempt, backoff)
 
     def _req(self, method, url, body=None, ctype="application/json", timeout=None, safe_to_retry=None):
         """Execute an HTTP request with built-in network resilience.
@@ -37,43 +85,39 @@ class Client:
         retriable = is_idempotent if safe_to_retry is None else safe_to_retry
         total_attempts = 1 + max_retries
 
+        parts = urllib.parse.urlsplit(url)
+        target = parts.path + (f"?{parts.query}" if parts.query else "")
+        headers = {"Authorization": self._auth, "Accept": "application/json"}
+        if data is not None:
+            headers["Content-Type"] = ctype
+
         for attempt in range(total_attempts):
-            r = urllib.request.Request(url, data=data, method=method)
-            r.add_header("Authorization", self._auth)
-            r.add_header("Accept", "application/json")
-            if data is not None:
-                r.add_header("Content-Type", ctype)
+            conn = self._connection(parts.scheme, parts.netloc, timeout)
             try:
-                with urllib.request.urlopen(r, timeout=timeout) as resp:
-                    raw = resp.read().decode()
-                    return resp.status, (json.loads(raw) if raw else {})
-            except urllib.error.HTTPError as e:
-                # HTTPError represents non-2xx HTTP responses.
-                # 429 is retriable for all requests; 502/503/504 are retriable only for idempotent/safe ones.
-                is_retriable = e.code == 429 or (retriable and e.code in (502, 503, 504))
-                if is_retriable and attempt < total_attempts - 1:
-                    delay = None
-                    if e.code == 429:
-                        retry_after = e.headers.get("Retry-After")
-                        if retry_after:
-                            try:
-                                delay = float(retry_after)
-                            except ValueError:
-                                pass
-                    if delay is None:
-                        delay = backoff * (2 ** attempt)
-                    time.sleep(delay)
-                    continue
-                else:
-                    return e.code, e.read().decode()
-            except (urllib.error.URLError, OSError) as e:
-                # Transient transport errors are retried only for idempotent/safe requests
+                conn.request(method, target, body=data, headers=headers)
+                resp = conn.getresponse()
+                raw = resp.read()
+                status = resp.status
+            except (http.client.HTTPException, OSError):
+                # Transport-level failure (dropped/reset/idle-closed connection, timeout, refused
+                # connection, ...). The connection is no longer trustworthy either way, so drop it --
+                # the next attempt (if any) opens a fresh one.
+                self.close()
                 if retriable and attempt < total_attempts - 1:
-                    delay = backoff * (2 ** attempt)
-                    time.sleep(delay)
+                    time.sleep(self._backoff(attempt, backoff))
+                    continue
+                raise
+            else:
+                if status < 400:
+                    return status, (json.loads(raw) if raw else {})
+                # Non-2xx response.
+                # 429 is retriable for all requests; 502/503/504 are retriable only for idempotent/safe ones.
+                is_retriable = status == 429 or (retriable and status in (502, 503, 504))
+                if is_retriable and attempt < total_attempts - 1:
+                    time.sleep(self._retry_delay(status, resp, attempt, backoff))
                     continue
                 else:
-                    raise
+                    return status, raw.decode()
 
         raise RuntimeError("Request failed: retry loop completed without returning")
 

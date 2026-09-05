@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- The launch gate. Compiled bindings do not validate StaticResource lookups,
+         so a mistyped resource key builds clean, passes every view-model test, and
+         then exits 0 with no window. Only actually loading the XAML catches it. -->
+    <PackageReference Include="Avalonia.Headless" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The view models are plain objects: they hold no Avalonia types, so this
+         suite runs headless on a CI runner with no display. -->
+    <ProjectReference Include="..\..\src\AdoBoardSync.Desktop\AdoBoardSync.Desktop.csproj" />
+    <ProjectReference Include="..\AdoBoardSync.TestKit\AdoBoardSync.TestKit.csproj" />
+  </ItemGroup>
+
+</Project>

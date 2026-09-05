@@ -4,9 +4,24 @@ dedup, audit, sprints.
 Each command is parameterised by the project ``Config``. Mutating commands are
 dry-run by default and only apply changes when ``args.go`` is set.
 """
-import time
+from concurrent.futures import ThreadPoolExecutor
 
 from . import csvio, htmlfmt, parser
+
+
+# Write fan-out width for an apply phase. The phase's jobs always target
+# independent work items (distinct ids), so plan order governs reporting only,
+# never correctness; each worker thread reuses its own keep-alive connection,
+# and 429 throttling is already handled per-request by the client's retry policy.
+APPLY_WORKERS = 8
+
+
+def _apply(jobs):
+    """Run each zero-argument job concurrently, returning results in job order."""
+    if not jobs:
+        return []
+    with ThreadPoolExecutor(max_workers=min(APPLY_WORKERS, len(jobs))) as pool:
+        return list(pool.map(lambda job: job(), jobs))
 
 
 # --------------------------------------------------------------------------- #
@@ -43,7 +58,7 @@ def sync_one(cfg, client, args):
         return 1
 
     # Scoped to the Issue type. A Task may cite another ticket's code in its own title —
-    # "Rate-limit rejections are logged and surfaced to monitoring (DDI-803)" is a DDI-805
+    # "Rate-limit rejections are logged and surfaced to monitoring (PROJ-803)" is a PROJ-805
     # task — and an unscoped CONTAINS matched it, so the cited ticket became unsyncable.
     found = client.wiql(
         f"[System.TeamProject]='{cfg.project}' AND [System.WorkItemType]='{cfg.types['story']}' "
@@ -215,7 +230,6 @@ def import_items(cfg, client, args):
             if iid:
                 created += 1
                 print(f"  Issue #{iid}: {title} (parent {parent_id})")
-            time.sleep(0.05)
 
     print(f"\nDone. Created {created} item(s).")
     return 0
@@ -278,8 +292,8 @@ def resync(cfg, client, args):
         return 0
 
     print("\nApplying...")
-    for wid, title, ops in updates:
-        st, _ = client.patch(wid, ops)
+    jobs = [lambda wid=wid, ops=ops: client.patch(wid, ops) for wid, _title, ops in updates]
+    for (wid, _title, _ops), (st, _r) in zip(updates, _apply(jobs)):
         print(f"  #{wid} -> {'OK' if st == 200 else f'FAIL {st}'}")
     print("\nResync finished.")
     return 0
@@ -312,7 +326,12 @@ def _issue_map(cfg, client, extra_field=None, code=None):
 
 
 def _child_tasks(cfg, client, parent_id, extra_field=None):
-    """{task_id: title}, or [(task_id, extra_field value)] if ``extra_field`` is given."""
+    """{task_id: title}, or [(task_id, extra_field value)] if ``extra_field`` is given.
+
+    One relations-expand of the single parent -- cheap for a one-Issue scope, but O(N) round
+    trips if called once per Issue for N Issues. Use ``_tasks_by_parent`` instead when reconciling
+    more than one Issue at a time.
+    """
     _, r = client.get_item(parent_id, expand="relations")
     child_ids = [
         int(rel["url"].split("/")[-1])
@@ -331,6 +350,39 @@ def _child_tasks(cfg, client, parent_id, extra_field=None):
     return out
 
 
+def _tasks_by_parent(cfg, client, parent_ids, extra_field=None):
+    """Every child Task of the given parent Issue ids, in one WIQL query plus one batched
+    get_items call -- versus a relations-expand per Issue (see ``_child_tasks``), which turns a
+    reconcile of N Issues into N extra round trips. That per-Issue pattern was the main reason
+    resync-tasks/sprints/assign felt slow on boards with many Issues even on a healthy network.
+
+    Returns {parent_id: {task_id: title}}, or {parent_id: [(task_id, extra_field value)]} if
+    ``extra_field`` is given -- always one entry per requested parent, even with no Tasks, so a
+    caller indexing by any id from its own ``parent_ids`` can do so directly (no ``.get(id, ...)``
+    fallback needed).
+    """
+    parent_ids = set(parent_ids)
+    out = {pid: ([] if extra_field else {}) for pid in parent_ids}
+    if not parent_ids:
+        return out
+    ids = client.wiql(
+        f"[System.TeamProject]='{cfg.project}' AND [System.WorkItemType]='{cfg.types['task']}'"
+    )
+    fields = ["System.Parent"] + [extra_field or "System.Title"]
+    items = client.get_items(ids, fields)
+    if extra_field:
+        for w in items:
+            pid = w["fields"].get("System.Parent")
+            if pid in parent_ids:
+                out[pid].append((w["id"], w["fields"].get(extra_field)))
+    else:
+        for w in items:
+            pid = w["fields"].get("System.Parent")
+            if pid in parent_ids:
+                out[pid][w["id"]] = w["fields"]["System.Title"]
+    return out
+
+
 def resync_tasks(cfg, client, args):
     bullets = parser.tasks_by_code(cfg)
     # Optional single-Issue scope. Without it the command reconciles the whole board, so
@@ -345,13 +397,21 @@ def resync_tasks(cfg, client, args):
     imap = _issue_map(cfg, client, code=only or None)
     tmax = cfg.task_title_max
 
+    # Scoped to one Issue, _child_tasks' single relations-expand is already minimal. Reconciling
+    # the whole board instead, batch every Issue's Tasks in one query up front rather than paying
+    # a relations-expand per Issue.
+    if only:
+        existing_by_parent = {pid: _child_tasks(cfg, client, pid) for pid in imap.values()}
+    else:
+        existing_by_parent = _tasks_by_parent(cfg, client, imap.values())
+
     plan = []  # (code, parent_id, [add_bullets], [(del_id, del_title)])
     for code, bs in bullets.items():
         pid = imap.get(code)
         if not pid:
             continue
         desired = {htmlfmt.plain(b)[:tmax]: b for b in bs}
-        existing = _child_tasks(cfg, client, pid)
+        existing = existing_by_parent[pid]
         existing_titles = set(existing.values())
         add = [orig for t, orig in desired.items() if t not in existing_titles]
         dele = [(i, t) for i, t in existing.items() if t not in desired]
@@ -372,21 +432,31 @@ def resync_tasks(cfg, client, args):
         print("\n(dry-run; pass --go to apply)")
         return 0
 
-    print("\nApplying...")
+    # Flatten the plan into independent create/delete jobs (one work item each) and
+    # write them concurrently; the flattened order is preserved for reporting.
+    actions = []  # ("add", code, pid, bullet) | ("del", code, task_id, title)
     for code, pid, add, dele in plan:
-        for b in add:
+        actions += [("add", code, pid, b) for b in add]
+        actions += [("del", code, i, t) for i, t in dele]
+
+    def _do(action):
+        kind, code, target, value = action
+        if kind == "add":
             ops = [
-                {"op": "add", "path": "/fields/System.Title", "value": htmlfmt.plain(b)[:tmax]},
-                {"op": "add", "path": "/fields/System.Description", "value": htmlfmt.inline(b)},
-                {"op": "add", "path": "/relations/-", "value": client.parent_link(pid)},
+                {"op": "add", "path": "/fields/System.Title", "value": htmlfmt.plain(value)[:tmax]},
+                {"op": "add", "path": "/fields/System.Description", "value": htmlfmt.inline(value)},
+                {"op": "add", "path": "/relations/-", "value": client.parent_link(target)},
             ]
-            st, r = client.create(cfg.types["task"], ops)
+            return client.create(cfg.types["task"], ops)
+        return client.delete(target)
+
+    print("\nApplying...")
+    for action, (st, r) in zip(actions, _apply([lambda a=a: _do(a) for a in actions])):
+        kind, code, target = action[0], action[1], action[2]
+        if kind == "add":
             print(f"  {code} + {'OK' if st in (200, 201) else f'FAIL {st} {r}'}")
-            time.sleep(0.05)
-        for i, t in dele:
-            st, _ = client.delete(i)
-            print(f"  {code} - #{i} {'OK' if st in (200, 204) else f'FAIL {st}'}")
-            time.sleep(0.05)
+        else:
+            print(f"  {code} - #{target} {'OK' if st in (200, 204) else f'FAIL {st}'}")
     print(f"\nDONE: +{tot_add} tasks, -{tot_del} tasks")
     return 0
 
@@ -411,14 +481,20 @@ def _assignee_value(field):
 
 
 def _hierarchy(cfg, client):
-    """Every Epic/Issue/Task on the board, with its state, parent, and assignee."""
+    """Every Epic/Issue/Task on the board, with its title, description, state,
+    parent, and assignee -- in one WIQL query plus one batched get_items call.
+
+    Descriptions come along so callers that compare them against the backlog
+    (``audit``) reuse this same single pair of round trips instead of issuing a
+    second full-board read beside ``close-children``'s hierarchy walk.
+    """
     types = "','".join([cfg.types["epic"], cfg.types["story"], cfg.types["task"]])
     ids = client.wiql(
         f"[System.TeamProject]='{cfg.project}' "
         f"AND [System.WorkItemType] IN ('{types}')"
     )
     fields = [
-        "System.Id", "System.Title", "System.State",
+        "System.Id", "System.Title", "System.Description", "System.State",
         "System.WorkItemType", "System.Parent", "System.AssignedTo",
     ]
     rec = {}
@@ -426,6 +502,7 @@ def _hierarchy(cfg, client):
         f = w["fields"]
         rec[w["id"]] = {
             "title": f.get("System.Title", ""),
+            "desc": f.get("System.Description", ""),
             "state": f.get("System.State", ""),
             "type": f["System.WorkItemType"],
             "parent": f.get("System.Parent"),
@@ -438,14 +515,21 @@ def _hierarchy(cfg, client):
     return rec, kids
 
 
-def _nearest_done_ancestor(rec, wid, done):
-    """The closest ancestor already marked done, or None."""
-    parent = rec[wid]["parent"]
-    while parent in rec:
-        if rec[parent]["state"] == done:
-            return parent
-        parent = rec[parent]["parent"]
-    return None
+def _drift(rec, kids, done):
+    """The two ways recorded states can disagree with the hierarchy (see ``state_drift``)."""
+    downward = {}
+    for wid, r in rec.items():
+        if r["state"] == done:
+            continue
+        ancestor = _nearest_done_ancestor(rec, wid, done)
+        if ancestor is not None:
+            downward[wid] = ancestor
+
+    upward = [
+        wid for wid, children in kids.items()
+        if rec[wid]["state"] != done and all(rec[c]["state"] == done for c in children)
+    ]
+    return downward, upward
 
 
 def state_drift(cfg, client):
@@ -459,20 +543,18 @@ def state_drift(cfg, client):
     """
     done = cfg.states["done"]
     rec, kids = _hierarchy(cfg, client)
-
-    downward = {}
-    for wid, r in rec.items():
-        if r["state"] == done:
-            continue
-        ancestor = _nearest_done_ancestor(rec, wid, done)
-        if ancestor is not None:
-            downward[wid] = ancestor
-
-    upward = [
-        wid for wid, children in kids.items()
-        if rec[wid]["state"] != done and all(rec[c]["state"] == done for c in children)
-    ]
+    downward, upward = _drift(rec, kids, done)
     return rec, kids, downward, upward
+
+
+def _nearest_done_ancestor(rec, wid, done):
+    """The closest ancestor already marked done, or None."""
+    parent = rec[wid]["parent"]
+    while parent in rec:
+        if rec[parent]["state"] == done:
+            return parent
+        parent = rec[parent]["parent"]
+    return None
 
 
 def _group_by_ancestor(downward):
@@ -517,16 +599,84 @@ def close_children(cfg, client, args):
         return 0
 
     print("\nApplying...")
-    for items in ordered.values():
-        for wid, _title, assignee in items:
-            ops = [{"op": "add", "path": "/fields/System.State", "value": done}]
-            if assignee:
-                ops.append({"op": "add", "path": "/fields/System.AssignedTo", "value": assignee})
-            st, r = client.patch(wid, ops)
-            print(f"  #{wid} -> {done}: {'OK' if st == 200 else f'FAIL {st} {r}'}")
-            time.sleep(0.05)
+    jobs = [
+        lambda wid=wid, assignee=assignee: client.patch(wid, [
+            {"op": "add", "path": "/fields/System.State", "value": done},
+            *([{"op": "add", "path": "/fields/System.AssignedTo", "value": assignee}]
+              if assignee else []),
+        ])
+        for items in ordered.values() for wid, _title, assignee in items
+    ]
+    flat = [(wid, assignee) for items in ordered.values() for wid, _t, assignee in items]
+    for (wid, _a), (st, r) in zip(flat, _apply(jobs)):
+        print(f"  #{wid} -> {done}: {'OK' if st == 200 else f'FAIL {st} {r}'}")
     print(f"\nDONE: closed {total} item(s)")
     return 0
+
+
+# --------------------------------------------------------------------------- #
+# set-state: move explicit work items to a state, by id
+# --------------------------------------------------------------------------- #
+# Some board repairs fall outside any backlog reconcile: a Task whose bullet has
+# left the backlog, a straggler blocking close-children, an item another team
+# moved while a cascade ran. This sets System.State -- and ticks a leading "[ ]"
+# title checkbox when the target is the terminal state, so a done Task's visible
+# wording agrees with its state -- for exactly the ids the caller names. It never
+# derives ids from the backlog; reaching for it is always an explicit decision.
+def set_state(cfg, client, args):
+    target = args.state or cfg.states["done"]
+    tick = not getattr(args, "no_tick", False) and target == cfg.states["done"]
+
+    wanted = sorted(set(args.ids))
+    fields = {
+        w["id"]: w["fields"]
+        for w in client.get_items(wanted, ["System.Id", "System.Title", "System.State"])
+    }
+    missing = [wid for wid in wanted if wid not in fields]
+    if missing:
+        print(f"WARN not found on this board: {missing}")
+
+    plan = []  # (id, title_from, ops)
+    for wid in wanted:
+        f = fields.get(wid)
+        if f is None:
+            continue
+        title = f.get("System.Title", "")
+        ops = []
+        if f.get("System.State") != target:
+            ops.append({"op": "add", "path": "/fields/System.State", "value": target})
+        if tick and title.startswith("[ ]"):
+            ops.append({
+                "op": "add", "path": "/fields/System.Title",
+                "value": "[x]" + title[len("[ ]"):],
+            })
+        plan.append((wid, title, ops))
+
+    unchanged = len(wanted) - len(plan) - len(missing)
+    head = f"State changes to '{target}': {len(plan)} item(s)"
+    if unchanged:
+        head += f"; {unchanged} already there"
+    print(head)
+    for wid, title, _ops in plan:
+        note = " (+tick)" if any(o["path"] == "/fields/System.Title" for o in _ops) else ""
+        print(f"  #{wid} {title[:70]}{note}")
+
+    if not args.go:
+        if missing:
+            return 1
+        print("\n(dry-run; pass --go to apply)")
+        return 0
+
+    jobs = [lambda wid=wid, ops=ops: client.patch(wid, ops) for wid, _t, ops in plan]
+    ok = fail = 0
+    for (wid, _t, _o), (st, r) in zip(plan, _apply(jobs)):
+        if st == 200:
+            ok += 1
+        else:
+            fail += 1
+            print(f"  #{wid} -> FAIL {st} {r}")
+    print(f"\nDONE: set '{target}' on {ok} item(s)")
+    return 0 if (fail == 0 and not missing) else 1
 
 
 # --------------------------------------------------------------------------- #
@@ -591,6 +741,12 @@ def sprints(cfg, client, args):
     assign_only = getattr(args, "assign_only", False)
     do_tasks = not getattr(args, "no_tasks", False)
 
+    # One query for every assigned Issue's Tasks, instead of a relations-expand per Issue.
+    tasks_by_parent = {}
+    if do_tasks:
+        parent_ids = [code_item[code][0] for code in assigned_on_board]
+        tasks_by_parent = _tasks_by_parent(cfg, client, parent_ids, "System.IterationPath")
+
     # (code, issue_id, desired_path, issue_needs, [task_ids])
     diff_plan = []
     skipped = 0
@@ -607,7 +763,7 @@ def sprints(cfg, client, args):
 
         task_ids = []
         if do_tasks:
-            for tid, tpath in _child_tasks(cfg, client, pid, "System.IterationPath"):
+            for tid, tpath in tasks_by_parent[pid]:
                 if _iteration_matches(tpath, desired_path):
                     continue
                 task_ids.append(tid)
@@ -647,6 +803,9 @@ def sprints(cfg, client, args):
         elif not team:
             print("\n(no team resolved; sprints created but not added to a team's sprint view)")
 
+    # One independent patch per work item, written concurrently. The rare
+    # reset-on-missing recovery stays on this thread: it runs only after a patch
+    # has failed, keeping each item's failure and its recovery in order.
     def _reset_iteration(wid, label, indent):
         reset_op = [{"op": "add", "path": "/fields/System.IterationPath", "value": cfg.project}]
         st_reset, r_reset = client.patch(wid, reset_op)
@@ -656,30 +815,37 @@ def sprints(cfg, client, args):
             print(f"{indent}FAIL {label} reset: {st_reset} {r_reset}")
 
     print("\nApplying...")
-    ok = fail = task_ok = task_fail = 0
-    reset_on_missing = getattr(args, "reset_on_missing", False)
+    writes = []  # ((kind, code, wid, desired_path), thunk), flattened in plan order
     for code, pid, desired_path, issue_needs, task_ids in diff_plan:
         op = [{"op": "add", "path": "/fields/System.IterationPath", "value": desired_path}]
         if issue_needs:
-            st, r = client.patch(pid, op)
-            if st == 200:
+            writes.append((("issue", code, pid, desired_path),
+                           lambda wid=pid, op=op: client.patch(wid, op)))
+        for tid in task_ids:
+            writes.append((("task", code, tid, desired_path),
+                           lambda wid=tid, op=op: client.patch(wid, op)))
+
+    ok = fail = task_ok = task_fail = 0
+    reset_on_missing = getattr(args, "reset_on_missing", False)
+    results = _apply([thunk for _meta, thunk in writes])
+    for (kind, code, wid, desired_path), (st, r) in zip([m for m, _ in writes], results):
+        if st == 200:
+            if kind == "issue":
                 ok += 1
             else:
-                fail += 1
-                print(f"  FAIL issue {code} #{pid} -> {desired_path}: {st} {r}")
-                if reset_on_missing:
-                    print(f"  Resetting issue {code} #{pid} to project root iteration...")
-                    _reset_iteration(pid, f"issue {code} #{pid}", "    ")
-        for tid in task_ids:
-            st2, r2 = client.patch(tid, op)
-            if st2 == 200:
                 task_ok += 1
-            else:
-                task_fail += 1
-                print(f"  FAIL task #{tid} of {code} -> {desired_path}: {st2} {r2}")
-                if reset_on_missing:
-                    _reset_iteration(tid, f"task #{tid}", "      ")
-        time.sleep(0.02)
+            continue
+        if kind == "issue":
+            fail += 1
+            print(f"  FAIL issue {code} #{wid} -> {desired_path}: {st} {r}")
+            if reset_on_missing:
+                print(f"  Resetting issue {code} #{wid} to project root iteration...")
+                _reset_iteration(wid, f"issue {code} #{wid}", "    ")
+        else:
+            task_fail += 1
+            print(f"  FAIL task #{wid} of {code} -> {desired_path}: {st} {r}")
+            if reset_on_missing:
+                _reset_iteration(wid, f"task #{wid}", "      ")
 
     print("\n" + "-" * 60)
     print(f"Issues assigned: {ok} ok, {fail} fail")
@@ -723,24 +889,6 @@ def _assignee_matches(field, desired):
     return str(field).strip().lower() == want
 
 
-def _child_tasks_assignee(cfg, client, parent_id):
-    """Child Tasks of ``parent_id`` as [(task_id, assigned_to_field)]."""
-    _, r = client.get_item(parent_id, expand="relations")
-    child_ids = [
-        int(rel["url"].split("/")[-1])
-        for rel in r.get("relations", [])
-        if rel.get("rel") == "System.LinkTypes.Hierarchy-Forward"
-    ]
-    out = []
-    if child_ids:
-        for w in client.get_items(
-            child_ids, ["System.WorkItemType", "System.AssignedTo"]
-        ):
-            if w["fields"].get("System.WorkItemType") == cfg.types["task"]:
-                out.append((w["id"], w["fields"].get("System.AssignedTo")))
-    return out
-
-
 def assign(cfg, client, args):
     owner = _assignee_ids(cfg)
     if not owner:
@@ -765,11 +913,18 @@ def assign(cfg, client, args):
     board_codes = set(code_item)
     unknown = sorted(set(owner) - board_codes)     # configured, not on the board
     uncovered = sorted(board_codes - set(owner))   # on the board, no owner in config
+    codes_in_scope = sorted(set(owner) & board_codes)
+
+    # One query for every in-scope Issue's Tasks, instead of a relations-expand per Issue.
+    tasks_by_parent = {}
+    if do_tasks:
+        parent_ids = [code_item[code][0] for code in codes_in_scope]
+        tasks_by_parent = _tasks_by_parent(cfg, client, parent_ids, "System.AssignedTo")
 
     # (code, issue_id, desired, current_display, issue_needs, [task_ids])
     plan = []
     skipped = 0
-    for code in sorted(set(owner) & board_codes):
+    for code in codes_in_scope:
         iid, current = code_item[code]
         desired = owner[code]
 
@@ -781,7 +936,7 @@ def assign(cfg, client, args):
 
         task_ids = []
         if do_tasks:
-            for tid, tfield in _child_tasks_assignee(cfg, client, iid):
+            for tid, tfield in tasks_by_parent[iid]:
                 if _assignee_matches(tfield, desired) or (only_unassigned and tfield):
                     continue
                 task_ids.append(tid)
@@ -810,24 +965,31 @@ def assign(cfg, client, args):
         return 0
 
     print("\nApplying...")
-    ok = fail = task_ok = task_fail = 0
+    writes = []  # ((kind, code, wid, desired), thunk), flattened in plan order
     for code, iid, desired, _current, issue_needs, task_ids in plan:
         op = [{"op": "add", "path": "/fields/System.AssignedTo", "value": desired}]
         if issue_needs:
-            st, r = client.patch(iid, op)
+            writes.append((("issue", code, iid, desired),
+                           lambda wid=iid, op=op: client.patch(wid, op)))
+        for tid in task_ids:
+            writes.append((("task", code, tid, desired),
+                           lambda wid=tid, op=op: client.patch(wid, op)))
+
+    ok = fail = task_ok = task_fail = 0
+    results = _apply([thunk for _meta, thunk in writes])
+    for (kind, code, wid, desired), (st, r) in zip([m for m, _ in writes], results):
+        if kind == "issue":
             if st == 200:
                 ok += 1
             else:
                 fail += 1
-                print(f"  FAIL issue {code} #{iid} -> {desired}: {st} {r}")
-        for tid in task_ids:
-            st, r = client.patch(tid, op)
+                print(f"  FAIL issue {code} #{wid} -> {desired}: {st} {r}")
+        else:
             if st == 200:
                 task_ok += 1
             else:
                 task_fail += 1
-                print(f"  FAIL task #{tid} of {code} -> {desired}: {st} {r}")
-        time.sleep(0.02)
+                print(f"  FAIL task #{wid} of {code} -> {desired}: {st} {r}")
 
     print("\n" + "-" * 60)
     print(f"Issues assigned: {ok} ok, {fail} fail")
@@ -844,14 +1006,17 @@ def dedup(cfg, client, args):
     ids = client.wiql(f"[System.TeamProject]='{cfg.project}'")
     print(f"Found {len(ids)} total work items. Checking for duplicates...")
 
+    # System.Parent rides along on the same batched read as everything else -- one
+    # query serves all three levels. Resolving parents through relations instead
+    # cost one per-item expand round trip per Task, the N+1 that made dedup crawl
+    # on large boards.
     items = client.get_items(
-        ids, ["System.Id", "System.Title", "System.WorkItemType"]
+        ids, ["System.Id", "System.Title", "System.WorkItemType", "System.Parent"]
     )
     by_title = {}        # (type, title_lower) -> [ids]   (Epics)
     by_code = {}         # code -> [(id, title)]          (Issues)
     task_by_parent = {}  # parent_id -> [(id, title)]     (Tasks)
 
-    # Tasks need their parent; relations require a per-item expand.
     for w in items:
         wt = w["fields"]["System.WorkItemType"]
         title = w["fields"].get("System.Title", "").strip()
@@ -864,12 +1029,7 @@ def dedup(cfg, client, args):
             else:
                 by_title.setdefault((sttype, title.lower()), []).append(w["id"])
         elif wt == tasktype:
-            _, r = client.get_item(w["id"], expand="relations")
-            parent_id = None
-            for rel in r.get("relations", []):
-                if rel.get("rel") == "System.LinkTypes.Hierarchy-Reverse":
-                    parent_id = int(rel["url"].split("/")[-1])
-                    break
+            parent_id = w["fields"].get("System.Parent")
             if parent_id:
                 task_by_parent.setdefault(parent_id, []).append((w["id"], title))
 
@@ -924,8 +1084,8 @@ def dedup(cfg, client, args):
         return 0
 
     print("\nDeleting...")
-    for wid in to_delete:
-        st, _ = client.delete(wid)
+    results = _apply([lambda wid=wid: client.delete(wid) for wid in to_delete])
+    for wid, (st, _) in zip(to_delete, results):
         print(f"  delete #{wid} -> {'OK' if st in (200, 204) else f'FAIL {st}'}")
     print("\nCleanup finished.")
     return 0
@@ -971,31 +1131,32 @@ def audit(cfg, client, args=None):
     estype, sttype = cfg.types["epic"], cfg.types["story"]
     tmax = cfg.task_title_max
 
-    ids = client.wiql(
-        f"[System.TeamProject]='{cfg.project}' "
-        f"AND [System.WorkItemType] IN ('{estype}','{sttype}')"
-    )
-    board = client.get_items(
-        ids,
-        ["System.Id", "System.Title", "System.Description", "System.WorkItemType"],
-    )
+    # One pair of round trips serves every check below: Epic/Issue identity,
+    # title/description parity against the backlog, Task parity per Issue, and
+    # state-vs-hierarchy agreement. Reading Epics/Issues separately from the
+    # hierarchy walk used to cost two full-board reads where one suffices.
+    rec, kids = _hierarchy(cfg, client)
     b_epics, b_issues = {}, {}
     epic_title_ids = {}   # epic title (lower) -> [ids]   (duplicate detection)
     issue_code_ids = {}   # issue code -> [ids]           (duplicate detection)
-    for w in board:
-        f = w["fields"]
-        t = f.get("System.Title", "").strip()
-        if f["System.WorkItemType"] == estype:
-            b_epics[w["id"]] = {"title": t, "desc": f.get("System.Description", "")}
-            epic_title_ids.setdefault(t.lower(), []).append(w["id"])
-        else:
+    for wid, r in rec.items():
+        t = r["title"].strip()
+        if r["type"] == estype:
+            b_epics[wid] = {"title": t, "desc": r["desc"]}
+            epic_title_ids.setdefault(t.lower(), []).append(wid)
+        elif r["type"] == sttype:
             m = cfg.issue_code_re.search(t)
             if m:
                 code = m.group(1).upper()
                 b_issues[code] = {
-                    "id": w["id"], "title": t, "desc": f.get("System.Description", ""),
+                    "id": wid, "title": t, "desc": r["desc"],
                 }
-                issue_code_ids.setdefault(code, []).append(w["id"])
+                issue_code_ids.setdefault(code, []).append(wid)
+        # A Task whose title cites another ticket's code ("…surfaced to monitoring
+        # (PROJ-101)") is neither a duplicate Issue nor its description's twin.
+        # Sorting only Epic and Story types into the maps keeps a cited code from
+        # inventing both a duplicate finding and a description-drift one — which
+        # is what a bare else branch did on any board where tasks cite codes.
 
     fails = []
     # Duplicate work items sharing an Issue code / Epic title collapse into a
@@ -1026,9 +1187,10 @@ def audit(cfg, client, args=None):
         if htmlfmt.norm(c["desc"]) != htmlfmt.norm(b["desc"]):
             fails.append(f"{code} description out of sync")
 
-    # One hierarchy read serves both checks below: which Tasks each Issue owns,
-    # and whether any state contradicts the hierarchy.
-    rec, kids, downward, upward = state_drift(cfg, client)
+    # State never comes from the backlog — it has no state column — so this
+    # checks the hierarchy against itself. Azure DevOps does not cascade state,
+    # so a closed Epic can sit above open Issues and Tasks indefinitely.
+    downward, upward = _drift(rec, kids, cfg.states["done"])
     task_type = cfg.types["task"]
     board_tasks = {
         pid: {rec[c]["title"] for c in children if rec[c]["type"] == task_type}

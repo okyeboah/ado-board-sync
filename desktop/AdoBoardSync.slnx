@@ -1,9 +1,12 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/AdoBoardSync.Core/AdoBoardSync.Core.csproj" />
+    <Project Path="src/AdoBoardSync.Desktop/AdoBoardSync.Desktop.csproj" />
+    <Project Path="src/AdoBoardSync.Infrastructure/AdoBoardSync.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/AdoBoardSync.Core.Tests/AdoBoardSync.Core.Tests.csproj" />
+    <Project Path="tests/AdoBoardSync.Desktop.Tests/AdoBoardSync.Desktop.Tests.csproj" />
     <Project Path="tests/AdoBoardSync.Parity.Tests/AdoBoardSync.Parity.Tests.csproj" />
     <Project Path="tests/AdoBoardSync.TestKit/AdoBoardSync.TestKit.csproj" />
   </Folder>

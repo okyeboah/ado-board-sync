@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="AdoBoardSync.Infrastructure.Tests" />
+    <InternalsVisibleTo Include="AdoBoardSync.Desktop.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- The operation history's store (ABSD-501). Storage dependencies belong here
+         and nowhere else: Core names the port and stays free of them. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\AdoBoardSync.Core\AdoBoardSync.Core.csproj" />
+  </ItemGroup>
+
+</Project>

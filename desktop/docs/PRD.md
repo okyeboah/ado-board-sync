@@ -1,8 +1,8 @@
 # Product Requirements Document: ADO Board Sync Desktop
 
-**Status:** Draft
+**Status:** Approved — delivered against in place; every change to a requirement lands as a ticket and is recorded in PROJECT-TRACKING.md
 
-**Date:** 2026-08-20
+**Date:** 2026-09-01 (rev 2; first approved 2026-08-20)
 
 ## 1. Problem
 
@@ -14,13 +14,13 @@ Provide a desktop companion to `ado-board-sync` that lets a user author the Mark
 
 ## 3. Users
 
-| User | Need |
-| --- | --- |
-| Backlog author | Edit the Markdown backlog and see exactly how each description will render on the board before syncing. |
-| Delivery/Scrum lead | Review a plan (creates/updates/deletes) before it touches the board, and clear hierarchy drift deliberately. |
-| Engineering manager | Manage sprint and assignee mapping without hand-editing JSON. |
-| New team member | Learn the backlog format and commands without memorizing CLI flags. |
-| Auditor | Confirm the board matches the backlog and see exactly what the last apply changed. |
+| User | Need | Where the app serves them |
+| --- | --- | --- |
+| Backlog author | Edit the Markdown backlog and see exactly how each description will render on the board before syncing. | The split editor: source on the left, the rendered preview (or the exact HTML) on the right, markup problems flagged per item. |
+| Delivery/Scrum lead | Review a plan (creates/updates/deletes) before it touches the board, and clear hierarchy drift deliberately. | Plan & Apply: a typed plan row per item, a confirmation restating the counts, and a stale-plan guard at Apply. |
+| Engineering manager | Manage sprint and assignee mapping without hand-editing JSON. | Sprints and Assignees sections (planned; R4). |
+| New team member | Learn the backlog format and commands without memorizing CLI flags. | Onboarding: open an existing `board.config.json` or describe the board in a form; a starter backlog can be scaffolded, and the preview teaches the format as they type. |
+| Auditor | Confirm the board matches the backlog and see exactly what the last apply changed. | Audit and History sections (planned; R3/R4). |
 
 ## 4. Success measures
 
@@ -35,8 +35,8 @@ Provide a desktop companion to `ado-board-sync` that lets a user author the Mark
 
 ### In scope for version 1
 
-- Open a Board profile: `board.config.json` and the Markdown backlog it points to.
-- Backlog Markdown editor with a live preview pane rendered by the same conversion rules as the CLI's description conversion.
+- Open a Board profile: `board.config.json` and the Markdown backlog it points to — from a file, or described in onboarding when no config exists yet, with an optional scaffolded starter backlog when the backlog file itself does not exist.
+- Backlog Markdown editor with a live preview pane rendered by the same conversion rules as the CLI's description conversion; editing an item's description block and writing it back to the file atomically.
 - Inline validation of malformed markup — the desktop equivalent of `check-html` — before any write is offered.
 - Plan generation for every mutating command — `import`, `resync`, `resync-tasks [CODE]`, `dedup`, `sync`, `sync-one CODE`, `sprints`, `assign`, and `close-children` — shown as a typed diff (create/update/delete/unchanged) before Apply.
 - Writing the import CSV from the backlog, matching `gen-csv`, for the Azure DevOps web importer and for review before a board write.
@@ -60,14 +60,28 @@ Provide a desktop companion to `ado-board-sync` that lets a user author the Mark
 
 ## 6. Product principles
 
-1. The Markdown backlog stays the single source of truth; the app never keeps a shadow copy that can drift silently from the file on disk.
+1. The Markdown backlog stays the single source of truth; the app never keeps a shadow copy that can drift silently from the file on disk. This is why unsaved editor changes block Plan and Apply: a Plan is computed from the file, never from a buffer.
 2. Every write is preceded by a plan and requires an explicit Apply — the desktop app never removes the CLI's dry-run/`--go` gate, it visualizes it.
 3. The desktop parser and the CLI parser agree on every backlog byte-for-byte; parity is verified, not assumed.
 4. The PAT never touches the repo, logs, or exported files.
 5. Closing a work item or reassigning ownership is a reviewed decision, shown separately from structural sync, exactly as the CLI excludes `close-children` and `assign` from `sync`.
 6. The preview pane renders precisely what Azure DevOps will render — no generic Markdown renderer, no divergence from the actual conversion rules.
 
-## 7. Release slices
+## 7. User journeys
+
+### 7.1 First run: bring your organization in
+
+A developer clones a repo that has a `board.config.json`; a PM onboards a board nobody has configured yet. Both start the app and land on the same screen with two routes: open the existing config file, or describe the board (organization, project, issue-code prefix, backlog file, optional team). A config that fails validation is explained right there — typed error code, safe message — instead of replacing the screen with an error page. On the form route, a backlog file that does not exist yet can be scaffolded: a working one-epic backlog written with the profile's own prefix, parseable by the CLI from the first minute. No credential is asked for until a Plan needs one.
+
+### 7.2 Edit a ticket and see the board before it happens
+
+A user selects an Issue in the backlog rail; its description sits editable in the source pane. As they type — bold, bullets, tables — the pane on the right renders exactly what Azure DevOps will receive, because it renders the output of the CLI's own converter, and the task list and markup problems recompute with it. Saving writes the edited blocks back into the backlog file atomically (a temp file renamed over the original), refuses if the file changed on disk since it was opened, re-parses, and keeps the same item selected. Until they save, Plan and Apply are refused: the file is the source of truth, and the app says so.
+
+### 7.3 Reconcile the board deliberately
+
+The user picks a command (import, resync, resync-tasks), enters a PAT that stays in the session, and generates a Plan: read-only, one row per affected item, glyph + word + colour per operation. Apply opens a confirmation restating the counts. Between review and Apply, neither the backlog nor the board may move — if either did, Apply is refused and the Plan regenerated. Every Apply reports per-item outcomes.
+
+## 8. Release slices
 
 | Release | Outcome |
 | --- | --- |
@@ -77,7 +91,7 @@ Provide a desktop companion to `ado-board-sync` that lets a user author the Mark
 | R4: Sprints, assignees & operations | Sprint and assignee planning views, close-children review/apply, operation history log. |
 | R5: Distribution | A signed, installable per-user package for macOS, Windows, and Linux, with documented install and upgrade steps. |
 
-## 8. Acceptance criteria
+## 9. Acceptance criteria
 
 | ID | Criterion |
 | --- | --- |
@@ -98,14 +112,18 @@ Provide a desktop companion to `ado-board-sync` that lets a user author the Mark
 | PRD-AC-15 | Given the backlog file is changed on disk outside the application, when the user next edits or applies, then the app reports the external change and requires an explicit reload before continuing. |
 | PRD-AC-16 | Given a backlog, when the user writes the import CSV, then it is byte-for-byte identical to the CSV the CLI's `gen-csv` writes for the same backlog and config. |
 | PRD-AC-17 | Given a supported operating system, when a user installs the released package, then the application starts and opens an existing Board profile without a developer toolchain present. |
+| PRD-AC-18 | Given an item's description edited in the source pane, when the user looks at the preview, task list, and markup problems, then all three reflect the edited text exactly as the same content would parse after a save; and when the user saves, then the file holds exactly the edited blocks, the workspace re-parses, and the selection stays on the edited item. |
+| PRD-AC-19 | Given unsaved editor changes, when the user generates a Plan or applies one, then both are refused with the reason; and given the backlog file changed on disk after the profile was opened, when the user saves, then the save is refused, the external edit survives, and the buffer is preserved for a later save after a reload. |
+| PRD-AC-20 | Given onboarding's form route names a backlog file that does not exist, when the user opens the board with the scaffold option ticked, then a working starter backlog is written with the profile's own prefix and parses with zero markup problems; and given an existing `board.config.json` that fails validation, then the first-run screen stays up and names the failure with a typed error code. |
 
-## 9. Deferred decisions
+## 10. Deferred decisions
 
-| Decision | Options | Default for draft | Revisit trigger |
+| Decision | Options | Decision | Notes |
 | --- | --- | --- | --- |
-| Desktop engine implementation | Full .NET port of parser/config/client/commands, or a thin process wrapper over the Python CLI | Full .NET port, parity verified by golden-file tests against the CLI | Resolved 2026-08-19 |
-| Credential storage | OS credential store only, or env var/file only | OS credential store, with env var/`.ado_pat` file recognized for existing projects | Before R1 implementation |
-| Config editing | Read/validate only, or a full GUI editor for `board.config.json` | Read/validate only in v1 | Before R4 |
-| Multi-profile support | One Board profile open at a time, or multiple profiles with a switcher | Multiple profiles, mirroring ADO Insights' Organization profiles | Before R1 implementation |
-| Live ADO validation while typing (e.g., confirming `types`/`states` names exist) | On every keystroke, or on demand only | On demand only | Before R3 |
-| Operation history storage | SQLite, or a flat file | SQLite | Before R4 implementation |
+| Desktop engine implementation | Full .NET port of parser/config/client/commands, or a thin process wrapper over the Python CLI | **Resolved 2026-08-19:** full .NET port, parity verified by golden-file tests against the CLI | — |
+| Credential storage | OS credential store only, or env var/file only | Session token → env var → file today; the OS credential store is a planned source ahead of it (ABSD-103) | Resolved for R1 scope |
+| Config editing | Read/validate only, or a full GUI editor for `board.config.json` | Read/validate only in v1 | Revisit before R4 |
+| Multi-profile support | One Board profile open at a time, or multiple profiles with a switcher | One profile at a time in v1; the registry lands as ABSD-502 | Revisit when ABSD-502 starts |
+| Live ADO validation while typing (e.g., confirming `types`/`states` names exist) | On every keystroke, or on demand only | On demand only | Revisit before R3 |
+| Operation history storage | SQLite, or a flat file | SQLite | Revisit before R4 implementation |
+| Scaffolding a new Board profile from scratch | Open-existing only, or compose-and-scaffold | **Resolved 2026-09-01:** the form composes a profile and can scaffold a starter backlog (PRD-AC-20) | FSD open decision 1 closed |

@@ -37,7 +37,11 @@ jobs:
 
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          # desktop/global.json is the one authoritative SDK pin (ABSD-105). Naming
+          # a floating '10.0.x' here as well lets the runner land in a feature band
+          # below the pin, which rollForward: latestFeature cannot reach — a hard
+          # failure on a build that floats safely today.
+          global-json-file: desktop/global.json
 
       - uses: actions/setup-python@v5
         with:
@@ -56,3 +60,67 @@ jobs:
         run: dotnet test desktop/AdoBoardSync.slnx --configuration Release --no-build
         env:
           ADO_BOARD_SYNC_PYTHON: python
+
+  # The desktop job above runs the headless UI suite on ubuntu only. This lane
+  # exists because the application is shipped per operating system: a build that
+  # is green on ubuntu proves nothing about whether macOS and Windows can even
+  # produce a runnable package (ABSD-506, ABSD-602).
+  package:
+    name: Package (${{ matrix.rid }})
+    needs: desktop
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            rid: osx-arm64
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      # Bash on the Windows runner too, so one script covers all three lanes
+      # rather than a PowerShell fork nobody runs locally.
+      - name: Publish self-contained
+        shell: bash
+        run: desktop/build/publish.sh ${{ matrix.rid }}
+
+      - name: Package
+        shell: bash
+        run: desktop/build/package.sh ${{ matrix.rid }}
+
+      # Proves the published binary is actually loadable on this runner, which is
+      # the failure a cross-compiled self-contained build actually has. It is not
+      # a launch: the app opens a window, and the runner has no display.
+      - name: Check the published binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          out="desktop/artifacts/publish/${{ matrix.rid }}"
+          case "${{ matrix.rid }}" in
+            win-*) exe="$out/AdoBoardSync.Desktop.exe" ;;
+            *)     exe="$out/AdoBoardSync.Desktop" ;;
+          esac
+          test -f "$exe" || { echo "No published executable at $exe"; exit 1; }
+          # A self-contained single file for the wrong architecture still exists
+          # and still has a size; only reading its header catches that.
+          case "${{ matrix.rid }}" in
+            osx-*)   file "$exe" | grep -q 'Mach-O 64-bit executable arm64' ;;
+            linux-*) file "$exe" | grep -q 'ELF 64-bit' ;;
+            win-*)   test -s "$exe" ;;
+          esac
+          echo "Published $(du -h "$exe" | cut -f1) executable for ${{ matrix.rid }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ado-board-sync-${{ matrix.rid }}
+          path: desktop/artifacts/packages/
+          if-no-files-found: error
+          retention-days: 14

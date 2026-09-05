@@ -1,3 +1,5 @@
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -570,6 +572,34 @@ class CommandsTest(unittest.TestCase):
         commands.resync_tasks(self.cfg, self.client, Args(go=True))
         self.assertEqual(commands.audit(self.cfg, self.client), 0)
 
+    def test_a_task_citing_an_issue_code_is_neither_duplicate_nor_drift(self):
+        # Live boards carry Tasks whose titles cite another ticket's code
+        # ("…surfaced to monitoring (PROJ-101)"). An audit that sorted every
+        # non-Epic item into its issue bucket turned each citation into a fake
+        # duplicate finding and a fake description-drift one against the cited
+        # Issue. Audit reads the hierarchy by type and must keep Tasks out.
+        commands.import_items(self.cfg, self.client, Args(go=True))
+        commands.resync_tasks(self.cfg, self.client, Args(go=True))
+        epic_id = next(
+            wid for wid, it in self.client.items.items()
+            if it["fields"]["System.WorkItemType"] == "Epic"
+        )
+        strays = [
+            "monitoring hook for PROJ-101 (older slice)",
+            "PROJ-101 follow-up: pagination",
+        ]
+        for title in strays:
+            self.client.add_item("Task", title, parent=epic_id)
+
+        captured = io.StringIO()
+        with contextlib.redirect_stdout(captured):
+            rc = commands.audit(self.cfg, self.client)
+        out = captured.getvalue()
+        self.assertEqual(0, rc)
+        self.assertNotIn("Duplicate Issue on board PROJ-101", out)
+        self.assertNotIn("PROJ-101 description out of sync", out)
+
+
     def test_audit_fails_on_description_drift_against_the_backlog(self):
         commands.import_items(self.cfg, self.client, Args(go=True))
         commands.resync_tasks(self.cfg, self.client, Args(go=True))
@@ -637,6 +667,75 @@ class CommandsTest(unittest.TestCase):
             desc=real["fields"].get("System.Description", ""), parent=epic,
         )
         self.assertEqual(commands.audit(self.cfg, self.client), 1)
+
+
+class SetStateTest(unittest.TestCase):
+    """set-state works from explicit ids only, so it needs no backlog fixture."""
+
+    def setUp(self):
+        self.cfg = build_cfg(csv_path="unused.csv")
+        self.client = FakeClient(self.cfg)
+
+    def test_moves_items_to_done_and_ticks_checkbox_titles(self):
+        open_task = self.client.add_item("Task", "[ ] Implement the append-only EventStore", state="To Do")
+        plain_task = self.client.add_item("Task", "Add optimistic-concurrency checks", state="To Do")
+
+        self.assertEqual(
+            commands.set_state(self.cfg, self.client, Args(go=True, ids=[open_task, plain_task], state=None)),
+            0,
+        )
+
+        self.assertEqual("Done", self.client.items[open_task]["fields"]["System.State"])
+        # The leading '[ ]' was ticked so the title wording agrees with the state.
+        self.assertEqual(
+            "[x] Implement the append-only EventStore",
+            self.client.items[open_task]["fields"]["System.Title"],
+        )
+        self.assertEqual("Done", self.client.items[plain_task]["fields"]["System.State"])
+        self.assertEqual(
+            "Add optimistic-concurrency checks",
+            self.client.items[plain_task]["fields"]["System.Title"],
+        )
+
+    def test_custom_target_state_does_not_tick_checkboxes(self):
+        task = self.client.add_item("Task", "[ ] Wire up orchestration", state="To Do")
+
+        rc = commands.set_state(
+            self.cfg, self.client, Args(go=True, ids=[task], state="Doing")
+        )
+
+        fields = self.client.items[task]["fields"]
+        self.assertEqual(0, rc)
+        self.assertEqual("Doing", fields["System.State"])
+        self.assertEqual("[ ] Wire up orchestration", fields["System.Title"])
+
+    def test_dry_run_reports_without_writing(self):
+        task = self.client.add_item("Task", "[ ] A straggler", state="To Do")
+
+        rc = commands.set_state(self.cfg, self.client, Args(go=False, ids=[task], state=None))
+
+        self.assertEqual(0, rc)
+        self.assertEqual("To Do", self.client.items[task]["fields"]["System.State"])
+
+    def test_unknown_ids_fail_the_run(self):
+        task = self.client.add_item("Task", "Real item", state="New")
+
+        self.assertEqual(
+            1,
+            commands.set_state(self.cfg, self.client, Args(go=True, ids=[task, 99999], state=None)),
+        )
+        # The named items still applied; the unknown id turns the exit code into a failure.
+        self.assertEqual("Done", self.client.items[task]["fields"]["System.State"])
+
+
+class ParallelApplyTest(unittest.TestCase):
+    def test_apply_returns_results_in_job_order_under_concurrency(self):
+        jobs = [lambda i=i: (i, i * 2) for i in range(200)]
+        results = commands._apply(jobs)
+        self.assertEqual([(i, i * 2) for i in range(200)], results)
+
+    def test_apply_with_no_jobs_returns_empty(self):
+        self.assertEqual([], commands._apply([]))
 
 
 if __name__ == "__main__":

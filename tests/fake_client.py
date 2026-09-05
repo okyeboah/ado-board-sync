@@ -1,5 +1,7 @@
 """In-memory Azure DevOps client used by command tests (no network)."""
+from collections import Counter
 import re
+import threading
 
 FORWARD = "System.LinkTypes.Hierarchy-Forward"
 REVERSE = "System.LinkTypes.Hierarchy-Reverse"
@@ -10,9 +12,15 @@ class FakeClient:
         self.cfg = cfg
         self.items = {}          # id -> {"fields": {...}, "relations": [...]}
         self._next = 1000
+        self._id_lock = threading.Lock()   # apply phases run jobs on worker threads
         self._type_names = set(cfg.types.values())
         self.iterations = {}     # name -> identifier
         self.team_iterations = set()  # identifiers added to the team's sprint view
+        # One entry incremented per call to the matching method -- a stand-in for "how many
+        # network round trips would this have cost against the real client". Tests use it to
+        # pin down that a command's request count stays flat as the number of Issues grows,
+        # instead of scaling with it (the N+1 pattern that made large boards feel slow).
+        self.call_counts = Counter()
 
     # --- seeding helpers ---------------------------------------------------
     def add_item(self, wtype, title, desc="", parent=None, state=None, assigned_to=None):
@@ -32,8 +40,9 @@ class FakeClient:
         return wid
 
     def _new_id(self):
-        self._next += 1
-        return self._next
+        with self._id_lock:
+            self._next += 1
+            return self._next
 
     def _link(self, parent, child):
         self.items[child]["relations"].append(
@@ -47,6 +56,7 @@ class FakeClient:
 
     # --- Client interface --------------------------------------------------
     def wiql(self, where):
+        self.call_counts["wiql"] += 1
         types = [t for t in self._type_names if f"'{t}'" in where]
         m_contains = re.search(r"CONTAINS '([^']*)'", where)
         m_title = re.search(r"\[System\.Title\]='([^']*)'", where)
@@ -62,6 +72,7 @@ class FakeClient:
         return sorted(out)
 
     def get_items(self, ids, fields):
+        self.call_counts["get_items"] += 1
         out = []
         for wid in ids:
             if wid not in self.items:
@@ -71,6 +82,7 @@ class FakeClient:
         return out
 
     def get_item(self, wid, expand=None):
+        self.call_counts["get_item"] += 1
         it = self.items[wid]
         return 200, {"id": wid, "fields": dict(it["fields"]), "relations": list(it["relations"])}
 

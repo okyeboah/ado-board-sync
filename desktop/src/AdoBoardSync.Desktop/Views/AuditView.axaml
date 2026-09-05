@@ -1,0 +1,172 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:planning="using:AdoBoardSync.Core.Planning"
+             xmlns:vm="using:AdoBoardSync.Desktop.ViewModels"
+             x:Class="AdoBoardSync.Desktop.Views.AuditView"
+             x:DataType="vm:MainWindowViewModel">
+
+    <Grid RowDefinitions="Auto,*" Margin="{StaticResource PagePadding}">
+
+        <!-- ============================ Controls =========================== -->
+        <StackPanel Grid.Row="0" Spacing="{StaticResource SpacingM}"
+                    Margin="{StaticResource SectionHeaderMargin}">
+
+            <TextBlock Classes="detail" TextWrapping="Wrap"
+                       Text="An audit reads the board and compares it to the backlog. It writes nothing and needs no confirmation, because there is nothing to confirm — the only way to act on a finding is to generate the Plan that fixes it." />
+
+            <!-- Credential. Audit reads the board, so it needs a token like any read. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}">
+                <TextBlock Text="Personal access token" Classes="fieldLabel" />
+                <TextBox Classes="field" PasswordChar="●"
+                         Text="{Binding Audit.SessionToken, Mode=TwoWay}" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="Leave blank to use the environment variable, token file or credential store named in the profile. A token typed here is held for this session only." />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="{Binding Audit.CredentialStatus}"
+                           IsVisible="{Binding Audit.CredentialStatus, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+            </StackPanel>
+
+            <!-- Quiet, not accent: the whole section is read-only, so nothing here
+                 is the higher-emphasis action Apply is on the Plan surface. -->
+            <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
+                <Button Classes="quiet" Content="Run audit"
+                        Click="OnRunAudit" IsEnabled="{Binding !Audit.IsBusy}" />
+                <Button Classes="quiet" Content="{Binding Audit.CloseChildrenCaption}"
+                        Click="OnCloseChildren"
+                        IsVisible="{Binding Audit.CanCloseChildren}"
+                        IsEnabled="{Binding !Audit.IsBusy}" />
+                <TextBlock Classes="body secondary" VerticalAlignment="Center"
+                           Text="{Binding Audit.StatusText}" />
+            </StackPanel>
+
+            <ProgressBar Classes="loaderStrip" IsVisible="{Binding Audit.IsBusy}" />
+
+            <TextBlock Classes="error" Text="{Binding Audit.ErrorText}"
+                       IsVisible="{Binding Audit.HasError}" />
+
+            <!-- The counts the CLI prints above its result. Worth showing on a clean
+                 board too: they are what makes a pass mean something. -->
+            <Border Classes="card" IsVisible="{Binding Audit.HasReport}">
+                <StackPanel Spacing="{StaticResource SpacingXS}">
+                    <TextBlock Classes="sectionTitle" Text="{Binding Audit.ResultText}" />
+                    <ItemsControl ItemsSource="{Binding Audit.HeaderLines}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="x:String">
+                                <TextBlock Classes="caption" Text="{Binding}" />
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <!-- ============================= Findings ========================== -->
+        <Grid Grid.Row="1" RowDefinitions="*">
+
+            <!-- No profile -->
+            <StackPanel Classes="statePanel" IsVisible="{Binding !HasProfile}">
+                <TextBlock Classes="stateTitle" Text="No board profile open" />
+                <TextBlock Classes="stateBody"
+                           Text="Open a profile in the Backlog section first. An audit compares that backlog against the board it names." />
+            </StackPanel>
+
+            <ScrollViewer>
+                <ScrollViewer.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasProfile" />
+                        <Binding Path="Audit.HasReport" />
+                    </MultiBinding>
+                </ScrollViewer.IsVisible>
+
+                <StackPanel Spacing="{StaticResource SpacingM}">
+
+                    <!-- A clean board says so plainly rather than showing an empty list. -->
+                    <StackPanel Classes="statePanel" IsVisible="{Binding Audit.IsClean}">
+                        <TextBlock Classes="stateTitle" Text="The board matches the backlog" />
+                        <TextBlock Classes="stateBody"
+                                   Text="Every Epic and Issue in the backlog is on the board, with the same title and description, and every Issue's Tasks match its bullets." />
+                    </StackPanel>
+
+                    <ItemsControl ItemsSource="{Binding Audit.Findings}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="planning:AuditFinding">
+                                <Border Classes="planRow">
+                                    <Grid ColumnDefinitions="Auto,Auto,*,Auto"
+                                          ColumnSpacing="{StaticResource SpacingS}">
+                                        <!-- Glyph and word together — DESIGN-SYSTEM §5.3
+                                             forbids carrying a state by colour alone. -->
+                                        <Border Grid.Column="0" Classes="badge">
+                                            <TextBlock Classes="onAccent">
+                                                <TextBlock.Text>
+                                                    <MultiBinding StringFormat="{}{0} {1}">
+                                                        <Binding Path="Glyph" />
+                                                        <Binding Path="KindLabel" />
+                                                    </MultiBinding>
+                                                </TextBlock.Text>
+                                            </TextBlock>
+                                        </Border>
+                                        <Border Grid.Column="1" Classes="badge">
+                                            <TextBlock Classes="onAccent" Text="{Binding Badge}" />
+                                        </Border>
+                                        <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                                            <TextBlock Classes="body" Text="{Binding Title}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding Title}" />
+                                            <TextBlock Classes="caption" Text="{Binding Detail}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="3" Classes="caption"
+                                                   VerticalAlignment="Center"
+                                                   Text="{Binding BoardReference}" />
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <!-- Held apart on purpose: the CLI prints these but does not fail
+                         on them, so folding them in would make a clean board read dirty. -->
+                    <StackPanel Spacing="{StaticResource SpacingXS}"
+                                IsVisible="{Binding Audit.HasReviews}">
+                        <TextBlock Classes="sectionTitle" Text="For review" />
+                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                   Text="Every child of these is Done while the parent is not. That is a judgement call rather than drift — a parent can hold review or sign-off work of its own — so it is reported here and counts against nothing." />
+                        <ItemsControl ItemsSource="{Binding Audit.Reviews}">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate x:DataType="planning:AuditFinding">
+                                    <Border Classes="planRow">
+                                        <Grid ColumnDefinitions="Auto,*,Auto"
+                                              ColumnSpacing="{StaticResource SpacingS}">
+                                            <Border Grid.Column="0" Classes="badge">
+                                                <TextBlock Classes="onAccent" Text="{Binding Badge}" />
+                                            </Border>
+                                            <TextBlock Grid.Column="1" Classes="body"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding Detail}" TextWrapping="Wrap" />
+                                            <TextBlock Grid.Column="2" Classes="caption"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding BoardReference}" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </StackPanel>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- Nothing run yet. -->
+            <StackPanel Classes="statePanel">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="HasProfile" />
+                        <Binding Path="!Audit.HasReport" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+                <TextBlock Classes="stateTitle" Text="Not audited yet" />
+                <TextBlock Classes="stateBody"
+                           Text="Running an audit reads the board and reports every difference. It writes nothing, so it is safe to run whenever you like." />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</UserControl>

@@ -28,6 +28,12 @@ public static class BacklogParser
         var description = new List<string>();
         var started = false;
 
+        // Where the current item's description block begins, or -1 while it has
+        // no description lines. Leading blanks are skipped, so the block starts
+        // at the first description line, not at the heading.
+        var descriptionStart = -1;
+        var lineIndex = 0;
+
         void Finalize()
         {
             if (items.Count > 0)
@@ -35,20 +41,25 @@ public static class BacklogParser
                 var target = items[^1];
                 items[^1] = target with
                 {
+                    // The block ends where the line that ended it begins: the next
+                    // heading, a stop heading, or the end of the file. An item with
+                    // no description starts and ends there, so an edit that adds
+                    // one splices in directly after the skipped blanks.
+                    DescriptionStart = descriptionStart < 0 ? lineIndex : descriptionStart,
+                    DescriptionEnd = lineIndex,
                     DescriptionLines = description,
-                    Bullets = target.Level == BacklogLevel.Issue
-                        ? [.. description
-                            .Where(line => line.Trim().StartsWith("- ", StringComparison.Ordinal))
-                            .Select(line => line.Trim()[2..].Trim())]
-                        : target.Bullets
+                    Bullets = BulletsOf(target.Level, description)
                 };
             }
 
             description = [];
+            descriptionStart = -1;
         }
 
-        foreach (var line in PythonCompat.SplitLines(markdown))
+        var lines = PythonCompat.SplitLines(markdown).ToList();
+        for (lineIndex = 0; lineIndex < lines.Count; lineIndex++)
         {
+            var line = lines[lineIndex];
             var stripped = line.Trim();
 
             if (StartsWithAnyStopHeading(config, stripped))
@@ -97,6 +108,11 @@ public static class BacklogParser
                     continue;
                 }
 
+                if (description.Count == 0)
+                {
+                    descriptionStart = lineIndex;
+                }
+
                 description.Add(line);
             }
         }
@@ -112,6 +128,18 @@ public static class BacklogParser
         Parse(config, markdown)
             .Where(item => item.Level == BacklogLevel.Issue)
             .ToDictionary(item => item.Code!, item => item.Bullets);
+
+    /// <summary>
+    /// The Task bullets an item's description block yields: top-level <c>-</c>
+    /// lines, stripped. Stated once here because the parser and the live editor
+    /// must derive the same Tasks from the same lines.
+    /// </summary>
+    public static IReadOnlyList<string> BulletsOf(BacklogLevel level, IReadOnlyList<string> descriptionLines) =>
+        level == BacklogLevel.Issue
+            ? [.. descriptionLines
+                .Where(line => line.Trim().StartsWith("- ", StringComparison.Ordinal))
+                .Select(line => line.Trim()[2..].Trim())]
+            : [];
 
     // An indexed loop rather than Any(predicate): this runs on every line of every
     // keystroke re-parse, and the closure plus interface enumerator would allocate

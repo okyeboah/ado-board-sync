@@ -1,0 +1,197 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ================================================================== -->
+    <!--  Palette                                                            -->
+    <!--  Values come from docs/DESIGN-SYSTEM.md §2. The accent hue is        -->
+    <!--  deliberately NOT ADO Insights' violet: the two tools share one      -->
+    <!--  spacing, type and radius language so they read as a family, and     -->
+    <!--  differ in hue so a user can tell which window they are in.          -->
+    <!--                                                                      -->
+    <!--  Every colour is named once per variant. Nothing downstream carries  -->
+    <!--  a hex literal, so switching variant repaints the whole shell        -->
+    <!--  instead of leaving light-mode surfaces on a dark background.        -->
+    <!-- ================================================================== -->
+    <ResourceDictionary.ThemeDictionaries>
+
+        <ResourceDictionary x:Key="Light">
+            <!-- Accent -->
+            <SolidColorBrush x:Key="AppAccentBrush" Color="#2D6CDF" />
+            <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#2D6CDF" Opacity="0.12" />
+            <SolidColorBrush x:Key="AppAccentEndBrush" Color="#5B9CFF" />
+            <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#2D6CDF" Offset="0" />
+                <GradientStop Color="#5B9CFF" Offset="1" />
+            </LinearGradientBrush>
+
+            <!-- Surfaces -->
+            <SolidColorBrush x:Key="ShellBackgroundBrush" Color="#FFFFFF" />
+            <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#F4F7FD" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#F4F7FD" />
+            <SolidColorBrush x:Key="CardBorderBrush" Color="#E3EAF7" />
+            <SolidColorBrush x:Key="EditorBackgroundBrush" Color="#FBFCFE" />
+
+            <!-- Text -->
+            <SolidColorBrush x:Key="TextPrimaryBrush" Color="#1E2430" />
+            <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5B6472" />
+            <SolidColorBrush x:Key="TextMutedBrush" Color="#8B93A1" />
+            <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF" />
+
+            <!-- Plan operations. Colour never carries the meaning alone; each is
+                 paired with a glyph and a label at the call site (§2, §5.3). -->
+            <SolidColorBrush x:Key="PlanCreateBrush" Color="#16C784" />
+            <SolidColorBrush x:Key="PlanUpdateBrush" Color="#F5A623" />
+            <SolidColorBrush x:Key="PlanDeleteBrush" Color="#EA3943" />
+            <SolidColorBrush x:Key="PlanUnchangedBrush" Color="#8B93A1" />
+
+            <!-- Validation -->
+            <SolidColorBrush x:Key="ValidationErrorBrush" Color="#EA3943" />
+            <SolidColorBrush x:Key="ValidationWarningBrush" Color="#F5A623" />
+            <SolidColorBrush x:Key="StatusOkBrush" Color="#16C784" />
+            <SolidColorBrush x:Key="StatusWarnBrush" Color="#F5A623" />
+            <SolidColorBrush x:Key="StatusErrorBrush" Color="#EA3943" />
+
+            <!-- Elevation -->
+            <BoxShadows x:Key="ShadowTile">0 4 12 0 #142D6CDF</BoxShadows>
+            <BoxShadows x:Key="ShadowCard">0 4 12 0 #0F000000</BoxShadows>
+            <BoxShadows x:Key="ShadowToast">0 8 24 0 #33000000</BoxShadows>
+        </ResourceDictionary>
+
+        <ResourceDictionary x:Key="Dark">
+            <!-- Accent -->
+            <SolidColorBrush x:Key="AppAccentBrush" Color="#6FA8FF" />
+            <SolidColorBrush x:Key="AppAccentSoftBrush" Color="#6FA8FF" Opacity="0.18" />
+            <SolidColorBrush x:Key="AppAccentEndBrush" Color="#2D6CDF" />
+            <LinearGradientBrush x:Key="WindowBackgroundBrush" StartPoint="0%,0%" EndPoint="100%,100%">
+                <GradientStop Color="#24354F" Offset="0" />
+                <GradientStop Color="#141B27" Offset="1" />
+            </LinearGradientBrush>
+
+            <!-- Surfaces -->
+            <SolidColorBrush x:Key="ShellBackgroundBrush" Color="#161B26" />
+            <SolidColorBrush x:Key="SidebarBackgroundBrush" Color="#1E2531" />
+            <SolidColorBrush x:Key="CardBackgroundBrush" Color="#1E2531" />
+            <SolidColorBrush x:Key="CardBorderBrush" Color="#2B3446" />
+            <SolidColorBrush x:Key="EditorBackgroundBrush" Color="#121722" />
+
+            <!-- Text -->
+            <SolidColorBrush x:Key="TextPrimaryBrush" Color="#EEF1F6" />
+            <SolidColorBrush x:Key="TextSecondaryBrush" Color="#B4BBC8" />
+            <SolidColorBrush x:Key="TextMutedBrush" Color="#7C8494" />
+            <SolidColorBrush x:Key="TextOnAccentBrush" Color="#161B26" />
+
+            <!-- Plan operations -->
+            <SolidColorBrush x:Key="PlanCreateBrush" Color="#3CCB7E" />
+            <SolidColorBrush x:Key="PlanUpdateBrush" Color="#F2C12E" />
+            <SolidColorBrush x:Key="PlanDeleteBrush" Color="#FF7A85" />
+            <SolidColorBrush x:Key="PlanUnchangedBrush" Color="#7C8494" />
+
+            <!-- Validation -->
+            <SolidColorBrush x:Key="ValidationErrorBrush" Color="#FF7A85" />
+            <SolidColorBrush x:Key="ValidationWarningBrush" Color="#F2C12E" />
+            <SolidColorBrush x:Key="StatusOkBrush" Color="#3CCB7E" />
+            <SolidColorBrush x:Key="StatusWarnBrush" Color="#F2C12E" />
+            <SolidColorBrush x:Key="StatusErrorBrush" Color="#FF7A85" />
+
+            <!-- Elevation -->
+            <BoxShadows x:Key="ShadowTile">0 4 12 0 #1A000000</BoxShadows>
+            <BoxShadows x:Key="ShadowCard">0 4 12 0 #26000000</BoxShadows>
+            <BoxShadows x:Key="ShadowToast">0 8 24 0 #40000000</BoxShadows>
+        </ResourceDictionary>
+
+    </ResourceDictionary.ThemeDictionaries>
+
+    <!-- ================================================================== -->
+    <!--  Spacing scale (DESIGN-SYSTEM §3)                                   -->
+    <!-- ================================================================== -->
+    <x:Double x:Key="SpacingTight">2</x:Double>
+    <x:Double x:Key="SpacingChip">6</x:Double>
+    <x:Double x:Key="SpacingXS">4</x:Double>
+    <x:Double x:Key="SpacingS">8</x:Double>
+    <x:Double x:Key="SpacingM">12</x:Double>
+    <x:Double x:Key="SpacingL">16</x:Double>
+    <x:Double x:Key="SpacingXL">24</x:Double>
+
+    <Thickness x:Key="InsetXS">4</Thickness>
+    <Thickness x:Key="InsetS">8</Thickness>
+    <Thickness x:Key="InsetM">12</Thickness>
+    <Thickness x:Key="InsetL">16</Thickness>
+    <Thickness x:Key="InsetXL">24</Thickness>
+
+    <!-- ================================================================== -->
+    <!--  Shell metrics                                                      -->
+    <!--  Everything that meets a page edge uses the same 24 gutter, so the   -->
+    <!--  header rule, the content and the footer note line up vertically.    -->
+    <!-- ================================================================== -->
+            <Thickness x:Key="PreviewPadding">16</Thickness>
+            <Thickness x:Key="PagePadding">24,16,24,24</Thickness>
+    <Thickness x:Key="HeaderPadding">24,16,24,12</Thickness>
+    <Thickness x:Key="FooterPadding">24,10</Thickness>
+    <Thickness x:Key="SidebarPadding">16,20,16,16</Thickness>
+    <Thickness x:Key="RailPadding">16,20,16,16</Thickness>
+    <Thickness x:Key="ShellMargin">10</Thickness>
+    <Thickness x:Key="ListItemMargin">0,2</Thickness>
+    <Thickness x:Key="SectionHeaderMargin">0,0,0,12</Thickness>
+    <Thickness x:Key="SubsectionMargin">0,4,0,0</Thickness>
+    <Thickness x:Key="HintMargin">0,2,0,0</Thickness>
+
+    <!-- The tagline hangs under the wordmark rather than under the app mark:
+         the mark's width plus the gap beside it. -->
+    <Thickness x:Key="WordmarkIndent">34,0,0,0</Thickness>
+
+    <!-- ================================================================== -->
+    <!--  Typography scale (DESIGN-SYSTEM §3)                                -->
+    <!-- ================================================================== -->
+    <x:Double x:Key="FontSizeCaption">11</x:Double>
+    <x:Double x:Key="FontSizeBody">13</x:Double>
+    <x:Double x:Key="FontSizeTitle">17</x:Double>
+    <x:Double x:Key="FontSizeDisplay">26</x:Double>
+
+    <!-- The source pane is monospace at body size; the preview uses the UI font
+         at the same size, so the two panes stay comparable line-for-line (§3). -->
+    <FontFamily x:Key="EditorFontFamily">Menlo, Cascadia Code, Consolas, monospace</FontFamily>
+
+    <!-- ================================================================== -->
+    <!--  Corner radii                                                       -->
+    <!--  Sm: badges, icon buttons, avatars. Md: buttons, inputs, list rows.  -->
+    <!--  Lg: cards, dialogs, the window shell. Pill: chips.                  -->
+    <!-- ================================================================== -->
+    <CornerRadius x:Key="RadiusSm">8</CornerRadius>
+    <CornerRadius x:Key="RadiusMd">10</CornerRadius>
+    <CornerRadius x:Key="RadiusLg">14</CornerRadius>
+    <CornerRadius x:Key="RadiusPill">14</CornerRadius>
+    <CornerRadius x:Key="RadiusSidebar">14,0,0,14</CornerRadius>
+
+    <!-- ================================================================== -->
+    <!--  Component metrics                                                  -->
+    <!-- ================================================================== -->
+    <Thickness x:Key="CardPadding">16</Thickness>
+    <Thickness x:Key="RowPadding">12,10</Thickness>
+    <Thickness x:Key="BadgePadding">8,3</Thickness>
+    <Thickness x:Key="ChipPadding">12,5</Thickness>
+    <Thickness x:Key="FieldPadding">10,7</Thickness>
+    <Thickness x:Key="ButtonPadding">16,8</Thickness>
+    <Thickness x:Key="QuietButtonPadding">12,7</Thickness>
+    <Thickness x:Key="EditorPadding">14,12</Thickness>
+
+    <x:Double x:Key="IconButtonSize">30</x:Double>
+    <x:Double x:Key="AvatarSizeSm">20</x:Double>
+    <x:Double x:Key="AvatarSizeMd">26</x:Double>
+    <x:Double x:Key="DotSize">10</x:Double>
+    <x:Double x:Key="ButtonMinWidth">88</x:Double>
+
+    <!-- ================================================================== -->
+    <!--  Surfaces                                                           -->
+    <!-- ================================================================== -->
+
+    <!-- A content card: shell-coloured, hairline border, neutral lift. -->
+    <ControlTheme x:Key="Card" TargetType="Border">
+        <Setter Property="Background" Value="{DynamicResource ShellBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{StaticResource RadiusLg}" />
+        <Setter Property="Padding" Value="{StaticResource CardPadding}" />
+        <Setter Property="BoxShadow" Value="{DynamicResource ShadowCard}" />
+    </ControlTheme>
+
+</ResourceDictionary>

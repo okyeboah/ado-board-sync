@@ -1,0 +1,54 @@
+## Codebase Patterns
+
+(reusable discoveries live here — keep story-specific detail in the entries below)
+
+- The CLI (src/ado_board_sync/*.py) is the reference implementation; the desktop C# app is a port kept honest by desktop/tests/AdoBoardSync.Parity.Tests, which shells out to the real Python via desktop/tests/parity/parity_driver.py. Port the code, never the README.
+- Gates: `PYTHONPATH=src python3 -m unittest discover -s tests -t .` (129 tests) and `ADO_BOARD_SYNC_PYTHON=python3 dotnet test desktop/AdoBoardSync.slnx -c Release` (Core 91, Parity 68, Desktop 109+8 live skipped). TreatWarningsAsErrors everywhere.
+- Parser subtleties: DescriptionLines includes Task bullets; top-level `- ` bullets are both description lines and Bullets; leading blanks before a description are skipped; re.match anchoring via PythonCompat.MatchAtStart; line splitting via PythonCompat.SplitLines (StringReader semantics).
+- Parity comparisons project both sides to an explicit canonical JSON (level/title/code/desc_lines/bullets), so C#-only additions to BacklogItem do not break parity as long as board semantics stay identical.
+- Avalonia pitfalls already hit: RadioButton groups raise Click while loading (bind IsChecked two-way, no Click handler); StaticResource typos build clean (WindowLaunchTests resolves every key); horizontal StackPanel in the tree template makes the rail pan sideways (use Grid).
+- The board's own vocabulary: work is Done only when committed AND its gate is green; anything only in the working tree is Partial (STATUS.md rule). This run keeps the pre-existing uncommitted tree uncommitted and stages nothing — commits are the user's call.
+
+---
+
+## ABSD-203/206-edit-save — ticket editing with live preview and atomic save
+
+- Delivered: BacklogItem now carries DescriptionStart/DescriptionEnd (end-exclusive, SplitLines coordinates) so the editor and the splice share one coordinate system; BacklogSplicer rewrites one item's block preserving the file's EOL style, trailing newline, and the block's trailing blank separator lines (they are the gap between items, not content — the parser includes them in DescriptionLines, so preserving them also keeps later ranges valid across multi-edit saves).
+- Delivered: BacklogNodeViewModel is ObservableObject with a settable Source buffer; preview/HTML/tasks/problems/Detail recompute per keystroke from the buffer via the same Core functions; IsDirty compares to OriginalSource. Raised PropertyChanged(IsDirty) is load-bearing — forgetting it silently disabled the whole save path (watch tests fail to find this class of bug).
+- Delivered: MainWindowViewModel collects dirty buffers, splices last-to-first (descending DescriptionStart), saves atomically via BacklogWorkspace.SaveMarkdown (temp+rename; refuses backlog.changed_on_disk when the file moved since load), re-parses, rebuilds, preserves selection by (level, code, title).
+- Delivered: Plan gate refuses Generate/Apply while unsaved (PlanViewModel.UnsavedEditsCheck, code backlog.unsaved) — a Plan is computed from the file and the file is the source of truth.
+- UI: TextBox.editor.editable style (base .editor stays read-only for the HTML pane), Save button + Ctrl+S KeyBinding, unsaved chips in content header and item header.
+- Proof: Core 108, Desktop 121+8 live skipped, Parity 68, CLI 129 — all green.
+- Note: no natural authored markdown produces unbalanced HTML today (the converter escapes, code spans are protected), so live problem recomputation is pinned via the derived-view tests; the real audit still gates Apply from the saved file's parse.
+
+## ABSD-204/207-csv-export — import CSV matching gen-csv byte for byte
+
+- Delivered: Core ImportCsv.Serialize — a port of csvio.py's serialization plus the Python csv module's default dialect: minimal quoting (delimiter/quote/CR/LF only), doubled quotes, CRLF record terminator, Epics in Title 1 / Issues in Title 2, config-driven type names, converter-LF newlines inside quoted fields.
+- Parity: parity_driver.py gained a `csv` mode; ImportCsvParityTests compares all backlog fixtures byte-for-byte (71 parity tests now).
+- Desktop: BacklogWorkspace.WriteImportCsv (no PAT, no network), MainWindowViewModel.ExportCsvTo(path) (view model takes a path; the save-file picker lives in the view, same pattern as profile loading), "Export CSV…" quiet button in the rail bottom stack gated on HasProfile.
+- Gotchas hit: the converter's list markup is <ul>\n<li>…</li>\n</ul> (LF between tags, not single-line), and a one-paragraph description carries NO quoting at all — verify against htmlfmt before writing expectations by hand.
+- Proof: Core 116, Parity 71, Desktop 122+8 skipped, CLI 129 — all green.
+
+## ABSD-112-onboarding-enrichment — onboarding and org-config import
+
+- Delivered: OpenFromOnboarding — a failed config open on the first-run screen reports Onboarding.ImportErrorText beside the route (typed code + safe message) instead of replacing onboarding with the shell error panel; the sidebar "Open profile…" keeps the old behaviour once a profile is open.
+- Delivered: starter-backlog scaffold — when the form names a backlog file that does not exist, CreateProfile writes a working starter (1 epic, 1 issue, 2 tasks, table + bullets) with the config's EXACT prefix and re-runs the build. The prefix must be upper-cased to match BoardProfileDraft.ToJson, because the heading regex is case-sensitive.
+- Ordering gotcha: BoardProfileDraft.Build() itself validates backlog existence (profile.backlog_missing), so scaffold-on-that-error-code + retry, not a pre-check.
+- UI: inline import error on route 1; scaffold checkbox appears only when CanScaffold (path set + file missing).
+- Proof: Core 116, Parity 71, Desktop 128+8 skipped, CLI 129 — all green.
+
+## DOCS-SPECS — PRD/FSD/ARCHITECTURE/DESIGN-SYSTEM deepened
+
+- All four moved Draft → Approved (GAPS backlog-approval-gate-violated remedy), rev 2 dated 2026-09-01, every claim checked against the code.
+- PRD: personas mapped to built surfaces, three user journeys, PRD-AC-18 (edit+preview+save round trip), PRD-AC-19 (unsaved gate + external-change refusal), PRD-AC-20 (scaffold + typed import errors); deferred-decisions table now records resolutions.
+- FSD: editing buffer semantics (§3.2), onboarding + scaffold (§3.1), data model gains descriptionRange, contract rows for save/export/onboarding, a full error-code table (§5.1), NFR updates, open decisions resolved where this run decided them.
+- ARCHITECTURE: module table now the authoritative list with file locations; new invariants documented (splice inside parser coordinates, last-to-first ordering, separator preservation, the file-is-source-of-truth gate).
+- DESIGN-SYSTEM: token table now names the actual Theme.axaml keys (both themes), component inventory split implemented/planned, editing-state components specified, interaction rules gained the buffer/file distinction.
+
+## DOCS-TRACKING — project tracking and live-doc sync
+
+- Delivered: PROJECT-TRACKING.md (milestones with checkable exit criteria, burn-down with a corrected recount — the old STATUS totals said 13/26 but its rows summed 14/25, dependency map, risk register, decision log, next-slice plan, and a suggested commit split for the uncommitted tree).
+- Synced: STATUS.md (per-ticket evidence + honest Partial states for uncommitted work, corrected totals 5/20/19=44, parity counts, new Next tickets), TRACEABILITY.md (AC-18/19/20 born Covered, AC-16 Open→Covered, NFR section — 9/4/7 of 20), GAPS.md (7 rows closed with fixes made at the source; 13 open), BACKLOG.md + all four specs now Approved, GITHUB-PROJECT.md vocabulary mapping, CONVENTIONS.md run command, root + desktop README, CHANGELOG, AGENTS.md.
+- Counting rule that caught two errors: re-derive every total from its own rows before publishing it.
+
+<promise>COMPLETE</promise>

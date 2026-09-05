@@ -1,3 +1,5 @@
+using AdoBoardSync.Core.Results;
+
 namespace AdoBoardSync.Core.Configuration;
 
 /// <summary>One place a Personal Access Token can come from.</summary>
@@ -6,8 +8,14 @@ public interface IPatSource
     /// <summary>A short name for the source, safe to show in an error. Never the token.</summary>
     string Name { get; }
 
-    /// <summary>Returns the token, or null when this source holds none.</summary>
-    string? TryRead();
+    /// <summary>
+    /// The token, a null value when this source simply holds none, or a failure when
+    /// the source exists but could not be read — a token file locked by another
+    /// process, a keychain the user cancelled. Those are three different answers and
+    /// the credential badge says something different for each, so they are not
+    /// collapsed into one null (ABSD-110).
+    /// </summary>
+    Result<string?> TryRead();
 }
 
 /// <summary>Reads the PAT from the environment variable named by <c>pat_env</c>.</summary>
@@ -15,10 +23,10 @@ public sealed class EnvironmentPatSource(string variableName) : IPatSource
 {
     public string Name => $"environment variable {variableName}";
 
-    public string? TryRead()
+    public Result<string?> TryRead()
     {
         var value = Environment.GetEnvironmentVariable(variableName);
-        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+        return string.IsNullOrWhiteSpace(value) ? (string?)null : value.Trim();
     }
 }
 
@@ -27,16 +35,44 @@ public sealed class FilePatSource(string path) : IPatSource
 {
     public string Name => $"token file {path}";
 
-    public string? TryRead()
+    public Result<string?> TryRead()
     {
         if (!File.Exists(path))
         {
-            return null;
+            return (string?)null;
         }
 
-        var token = File.ReadAllText(path).Trim();
-        return token.Length > 0 ? token : null;
+        string token;
+        try
+        {
+            token = File.ReadAllText(path).Trim();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The one place the library's Result discipline used to break: an
+            // unguarded read here threw straight through a resolver every caller
+            // treats as total, so a locked, permission-denied or mid-delete token
+            // file crashed the action instead of naming itself in the badge.
+            return Error.SourceFailure(
+                "credential.file_unreadable",
+                $"Could not read the token file {path}: {ex.Message}");
+        }
+
+        return token.Length > 0 ? token : (string?)null;
     }
+}
+
+/// <summary>
+/// What one resolution attempt found: the token if any, which source produced it,
+/// and every source that failed on the way. The failures travel with the result
+/// because a badge reading "no token found" while a keychain was quietly refusing
+/// is worse than no badge at all (ABSD-110).
+/// </summary>
+public sealed record PatResolution(string? Token, string? SourceName, IReadOnlyList<Error> Failures)
+{
+    public bool Found => Token is not null;
+
+    public bool HasFailures => Failures.Count > 0;
 }
 
 /// <summary>
@@ -54,27 +90,67 @@ public sealed class FilePatSource(string path) : IPatSource
 /// </summary>
 public sealed class PatResolver(IReadOnlyList<IPatSource> sources)
 {
-    /// <summary>The CLI-compatible order: the environment variable, then the token file.</summary>
-    public static PatResolver ForConfig(BoardConfig config) =>
-        new([
-            new EnvironmentPatSource(config.PatEnv),
-            new FilePatSource(config.ResolvePath(config.PatFile))
-        ]);
+    /// <summary>
+    /// The CLI-compatible order, with ABSD-103's addition in front: the operating
+    /// system's credential store, then <c>pat_env</c>, then <c>pat_file</c>. A
+    /// platform with no usable store contributes no source at all rather than one
+    /// that always misses, so <see cref="DescribeSources"/> does not list a place
+    /// the user could not have put anything.
+    /// </summary>
+    public static PatResolver ForConfig(BoardConfig config, ICredentialStore? credentialStore = null)
+    {
+        var sources = new List<IPatSource>();
+
+        if (credentialStore is { IsAvailable: true })
+        {
+            sources.Add(new CredentialStorePatSource(credentialStore, CredentialKey(config)));
+        }
+
+        sources.Add(new EnvironmentPatSource(config.PatEnv));
+        sources.Add(new FilePatSource(config.ResolvePath(config.PatFile)));
+        return new PatResolver(sources);
+    }
+
+    /// <summary>
+    /// The key one profile's token is stored under. Keyed by organisation and
+    /// project rather than by config path, so moving the config file does not
+    /// orphan the token and two profiles can never share one entry.
+    /// </summary>
+    public static string CredentialKey(BoardConfig config) =>
+        $"ado-board-sync:{config.Org}/{config.Project}";
 
     public IReadOnlyList<IPatSource> Sources => sources;
 
     /// <summary>Returns the first token found, or null. Never logged.</summary>
-    public string? Resolve()
+    public string? Resolve() => ResolveDetailed().Token;
+
+    /// <summary>
+    /// The same walk, keeping what it learned: which source answered, and every
+    /// source that failed rather than simply holding nothing.
+    /// </summary>
+    public PatResolution ResolveDetailed()
     {
+        var failures = new List<Error>();
+
         foreach (var source in sources)
         {
-            if (source.TryRead() is { } token)
+            var read = source.TryRead();
+            if (read.IsFailure)
             {
-                return token;
+                // A source that is broken does not stop the walk: the next one may
+                // well hold the token, and the CLI keeps working when a keychain
+                // does not. The failure is reported, not thrown.
+                failures.Add(read.Error!);
+                continue;
+            }
+
+            if (read.Value is { } token)
+            {
+                return new PatResolution(token, source.Name, failures);
             }
         }
 
-        return null;
+        return new PatResolution(null, null, failures);
     }
 
     /// <summary>

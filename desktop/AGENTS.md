@@ -8,10 +8,30 @@ here, whichever agent you are.
 
 ## Current status
 
-Planning only. `desktop/docs/` holds the PRD, FSD, Architecture, Design
-System, delivery Backlog, and GitHub Project blueprint. No application code
-exists yet. Read all six documents in `desktop/docs/` before writing any
-code — they are the specification, not background reading.
+There is a running, editing application. `dotnet run --project src/AdoBoardSync.Desktop --
+<path-to-board.config.json>` opens a window that loads a Board profile, parses the
+backlog with the same Core engine the CLI uses, previews each description as it
+will read on the board, lets the user edit a description with that preview
+recomputing live and save it back atomically (Ctrl+S), exports the import CSV
+byte-identical to `gen-csv`, and can plan and apply Import/Resync/ResyncTasks
+against Azure DevOps behind a confirmation gate. Onboarding can describe a
+board without a config file and scaffold a starter backlog.
+
+`desktop/docs/` holds twelve documents. Five are live and must be updated in the
+same change that makes them wrong:
+
+| Document | Answers |
+| --- | --- |
+| `STATUS.md` | Is this ticket done? |
+| `GAPS.md` | What do we know is broken that no ticket has caught? |
+| `TRACEABILITY.md` | Is this requirement tested? |
+| `PROJECT-TRACKING.md` | When, in what order, and what could derail it? |
+| `BACKLOG.md` | What are the tickets? |
+
+The rest — PRD, FSD, ARCHITECTURE, CONVENTIONS, DESIGN-SYSTEM, GITHUB-PROJECT,
+MECE-AUDIT — are the specification (Approved, rev 2). Read ARCHITECTURE.md and
+DESIGN-SYSTEM.md before changing structure or UI; they carry constraints the
+code does not restate.
 
 ## The one rule that matters most
 

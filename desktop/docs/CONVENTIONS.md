@@ -10,8 +10,12 @@
 | --- | --- |
 | `desktop/src/AdoBoardSync.Core` | Config loading, credential resolution, backlog parsing, Markdown/HTML conversion, and (as they land) the Plan Builder. No HTTP, storage, or UI dependencies. |
 | `desktop/src/AdoBoardSync.Core/PythonCompat.cs` | The Python semantics the port depends on — `re.match` anchoring and text-mode line splitting — stated once for every module ported from the CLI. |
-| `desktop/src/AdoBoardSync.Infrastructure` | Azure DevOps connector, OS credential store, SQLite operation history. Not yet created. |
-| `desktop/src/AdoBoardSync.Desktop` | Avalonia desktop host and UI. Not yet created. |
+| `desktop/src/AdoBoardSync.Infrastructure` | The only project that touches the filesystem or the network on the application's behalf: the Azure DevOps connector, the backlog/config file store, the OS credential store, and the SQLite operation history. References Core and nothing else. |
+| `desktop/src/AdoBoardSync.Desktop` | Avalonia desktop host, views, view models, and the single composition root that binds every port to its adapter. |
+| `desktop/Directory.Build.props` | The build conventions every project inherits: target framework, nullable, `TreatWarningsAsErrors`. A new project gets the quality gate without restating it. |
+| `desktop/Directory.Packages.props` | Every package version, once. A csproj names a package and never its version. |
+| `desktop/global.json` | The SDK feature-band pin, and the file CI's `setup-dotnet` reads. |
+| `desktop/tests/Directory.Build.targets` | Adds the xunit packages and the `Xunit` global using to test projects only. Imported after each csproj so it can read that project's own `IsTestProject`; `AdoBoardSync.TestKit` sets it false and is skipped. |
 | `desktop/tests/AdoBoardSync.Core.Tests` | Unit tests stating the behaviour the Core guarantees. |
 | `desktop/tests/AdoBoardSync.Parity.Tests` | Golden-file tests comparing the .NET output to the Python CLI's output. |
 | `desktop/tests/AdoBoardSync.TestKit` | Shared test helpers: repository paths, the Python reference runner, temp Board profiles. |
@@ -26,6 +30,8 @@ cd desktop
 dotnet restore
 dotnet build
 dotnet test
+
+dotnet run --project src/AdoBoardSync.Desktop   # opens the application
 ```
 
 The parity suite shells out to Python. It uses `.venv/bin/python3` at the
@@ -39,7 +45,35 @@ dotnet build --configuration Release
 dotnet test --configuration Release
 ```
 
-Every project sets `TreatWarningsAsErrors`. A warning fails the build.
+Every project inherits `TreatWarningsAsErrors` from `Directory.Build.props`. A
+warning fails the build, and a project added later cannot opt out by omission.
+
+## Package versions
+
+Versions live in `desktop/Directory.Packages.props` and nowhere else —
+`ManagePackageVersionsCentrally` is on, so a `Version=` attribute in a csproj
+fails the restore with NU1008 rather than drifting quietly.
+
+**All Avalonia packages move in lockstep.** They are pinned through the single
+`$(AvaloniaVersion)` property; bumping one and not the others binds a mismatched
+pair at runtime rather than failing at build. The line tracks 12.1.x: Avalonia
+11.3.7 resolves a vulnerable `Tmds.DBus.Protocol` 0.21.2 and fails `dotnet
+restore` with NU1903 under this repository's warning policy, while 12.1.1
+resolves 0.94.1 and restores clean with no suppression to remember to remove.
+
+The SDK is pinned by `desktop/global.json` with `rollForward: latestFeature`,
+and `.github/workflows/build-and-test.yml` reads that same file through
+`global-json-file` — one authoritative pin, so CI and a development machine
+cannot disagree about which SDK built a green run.
+
+## Publishing
+
+```bash
+dotnet publish src/AdoBoardSync.Desktop -c Release -r osx-arm64 --self-contained true
+```
+
+The output lands in `src/AdoBoardSync.Desktop/bin/Release/net10.0/<rid>/publish/`.
+Substitute `win-x64`, `linux-x64` or `osx-x64` for the other targets.
 
 ## Contribution rules
 

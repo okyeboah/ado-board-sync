@@ -1,0 +1,30 @@
+<Project>
+
+  <!--
+    Every property here was copy-pasted into each csproj before ABSD-105. Held in
+    one place, a new project inherits the conventions instead of silently
+    dropping them (GAPS: no-directory-build-props).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Deterministic output so two builds of the same commit are comparable. -->
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+  <!--
+    Central Package Management. Versions live in Directory.Packages.props; a
+    csproj names a package and never its version, so Avalonia and xunit cannot
+    drift apart across the seven projects (GAPS: no-central-package-management).
+  -->
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,64 @@
+{
+  "branchName": "main",
+  "stories": [
+    {
+      "id": "ABSD-203/206-edit-save",
+      "title": "Ticket editing with live preview and atomic save",
+      "acceptanceCriteria": [
+        "The source pane is editable; the preview, generated HTML, task list, and markup problems for that item update live from the edited text.",
+        "Tree badges, the header markup chip, and the workspace problem count reflect the edited text without saving.",
+        "Save (button and Ctrl+S) writes the edited description blocks back into the backlog file atomically (temp file + rename), re-parses, rebuilds the tree, preserves selection, and clears the dirty state.",
+        "Save refuses to overwrite external on-disk changes and reports them instead.",
+        "Plan generation and Apply are refused while unsaved edits exist, with a message that says why.",
+        "Core gains tested primitives: parser line ranges for each item's description block and a BacklogSplicer that rewrites one item's block, preserving line endings and everything outside the block."
+      ],
+      "priority": "Must",
+      "passes": true
+    },
+    {
+      "id": "ABSD-204/207-csv-export",
+      "title": "Import CSV export matching gen-csv byte for byte",
+      "acceptanceCriteria": [
+        "Core writes the same CSV csvio.py writes for the same parsed backlog: same columns, same quoting, same CRLF line endings (parity-tested against the real Python module).",
+        "The app can write the import CSV from the open profile to a chosen path without a PAT and without touching Azure DevOps."
+      ],
+      "priority": "Should",
+      "passes": true
+    },
+    {
+      "id": "ABSD-112-onboarding-enrichment",
+      "title": "Onboarding and organization-config import enrichment",
+      "acceptanceCriteria": [
+        "Opening an existing board.config.json surfaces a typed validation message on the onboarding screen (not the generic error panel) when the file is invalid.",
+        "The describe-one-here form validates before creating: a missing/unreadable backlog file, or a bad save path, reports a specific inline error.",
+        "After choosing a backlog file, a newly created profile can scaffold a starter backlog when none exists, so a brand-new organization onboards end to end."
+      ],
+      "priority": "Should",
+      "passes": true
+    },
+    {
+      "id": "DOCS-SPECS",
+      "title": "Deepen PRD, FSD, Architecture, and Design System",
+      "acceptanceCriteria": [
+        "PRD: personas with jobs and pain, user journeys, release slices with acceptance mapping, success measures kept falsifiable.",
+        "FSD: screen-by-screen behaviour including the new editing flow, error taxonomy, data contracts, NFRs updated to what exists.",
+        "Architecture: module table matches the code as built (ranges, splicer, CSV export, save path), the diagram is current, risks current.",
+        "Design System: tokens match Theme.axaml as built, component inventory covers every control class in use, editing-state components specified.",
+        "Every claim is checked against the repository; no doc states behaviour that does not exist."
+      ],
+      "priority": "Must",
+      "passes": true
+    },
+    {
+      "id": "DOCS-TRACKING",
+      "title": "Project tracking doc and live-doc sync",
+      "acceptanceCriteria": [
+        "A PROJECT-TRACKING.md exists: milestone plan, ticket burn-down, dependency map, risk register, decision log.",
+        "STATUS.md, TRACEABILITY.md, GAPS.md, and BACKLOG.md are updated in the same change set to reflect everything this run delivered, with evidence.",
+        "The root README's stale 'desktop app is in the planning stage' claim is corrected."
+      ],
+      "priority": "Must",
+      "passes": true
+    }
+  ]
+}

@@ -1,8 +1,8 @@
 # ADO Board Sync Desktop Initial Delivery Backlog
 
-**Status:** Draft
+**Status:** Approved (2026-09-01) — this backlog is being delivered against; work items exist on the GitHub board and STATUS.md tracks each ticket's state.
 
-This Markdown backlog is the initial source of truth. It follows the same format `ado-board-sync` itself parses, and is a candidate to be reconciled by the CLI onto a board once a target project exists. Do not create remote work items until the PRD, FSD, and Architecture decisions above are approved.
+This Markdown backlog is the initial source of truth. It follows the same format `ado-board-sync` itself parses, and is a candidate to be reconciled by the CLI onto a board once a target project exists.
 
 ## Epic ABSD-100: Product foundation
 
@@ -138,3 +138,46 @@ This Markdown backlog is the initial source of truth. It follows the same format
 **Outcome:** A signed, per-user installable package for macOS, Windows, and Linux, produced by a repeatable build script, with documented install and upgrade steps.
 
 **Depends on:** ABSD-503, ABSD-505.
+
+## Epic ABSD-700: Agent-assisted authoring
+
+Let a user prompt an agent CLI they already have installed to draft or revise
+backlog items, review the result as a diff, and see its board consequences —
+without this app ever holding a provider credential, and without shortening the
+Plan/Apply gate.
+
+### ABSD-701 · Add agent provider port and discovery
+
+**Outcome:** An `IAgentProvider` port in Core, with an Infrastructure adapter reporting which agent CLIs are installed on this machine (`claude`, `codex`, `opencode`, `gemini`) and their versions. Each CLI uses its own existing authentication; this app reads, stores and logs no provider credential, exactly as ARCHITECTURE.md §6 requires of the PAT.
+
+**Depends on:** ABSD-106.
+
+### ABSD-702 · Run an agent CLI as a subprocess
+
+**Outcome:** A chosen provider runs with a prompt in the open profile's directory, streaming output, cancellable, with a timeout, and with its exit status mapped to a typed `Error` rather than an exception. The PAT never reaches the child's environment, arguments or stdin.
+
+**Depends on:** ABSD-701, ABSD-107.
+
+### ABSD-703 · Add a prompt surface scoped to the selection
+
+**Outcome:** A prompt box scoped to the selected Epic or Issue, or to the whole backlog, stating before it runs which provider will run, what it can read, and what it may change.
+
+**Depends on:** ABSD-702, ABSD-109.
+
+### ABSD-704 · Review an agent's backlog edit as a diff
+
+**Outcome:** Whatever the agent changed is shown as a diff against the file as it was, accepted or rejected whole, never written silently. Rejecting restores the file byte for byte; accepting re-parses and re-validates before the editor shows it.
+
+**Depends on:** ABSD-703, ABSD-203, ABSD-206.
+
+### ABSD-705 · Plan the board consequences of an agent's draft
+
+**Outcome:** From an accepted agent edit, generate a Plan through the same read-only path as ABSD-302, so the board consequences are visible before any write. Apply still requires its own confirmation; agent involvement never shortens the gate.
+
+**Depends on:** ABSD-704, ABSD-302, ABSD-305.
+
+### ABSD-706 · Record every agent run
+
+**Outcome:** Provider, version, prompt, scope, exit status and whether the edit was accepted, recorded in the same local store as ApplyRuns — so a change in an agent's behaviour is attributable rather than guessed at.
+
+**Depends on:** ABSD-702, ABSD-501.

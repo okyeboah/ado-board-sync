@@ -8,9 +8,10 @@ namespace AdoBoardSync.Core;
 /// The CLI is the reference implementation, so several of its behaviours are
 /// load-bearing rather than incidental. Each one lived as a private copy in the
 /// module that first needed it; every further module ported from Python needs the
-/// same rules, so they are stated once here.
+/// same rules, so they are stated once here. Public because the desktop layer
+/// splits editor buffers with the same rule the parser applies to files.
 /// </summary>
-internal static class PythonCompat
+public static class PythonCompat
 {
     /// <summary>
     /// Applies <c>re.match</c> semantics: anchored at position 0, not a search.

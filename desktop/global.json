@@ -1,0 +1,8 @@
+{
+  "//": "Two .NET 10 SDKs are installed on the development machines; without this file the build silently picks whichever the host resolves first. latestFeature keeps that deterministic (always the highest 10.x band present) while still restoring on a CI runner that provisions any 10.0.x.",
+  "sdk": {
+    "version": "10.0.100",
+    "rollForward": "latestFeature",
+    "allowPrerelease": false
+  }
+}

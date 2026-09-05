@@ -16,11 +16,15 @@ to match it.
 
 ## Desktop app
 
-A desktop companion app is planned: a backlog Markdown editor with a live
-preview of the rendered Azure DevOps description, and a visual plan/apply
-flow over the same CLI semantics. It is in the planning stage — see
-[desktop/README.md](desktop/README.md) for the PRD, FSD, architecture,
-design system, and delivery backlog.
+A cross-platform desktop companion ships in this repository under
+[desktop/](desktop/): a split-pane backlog editor where every description's
+preview renders through the same conversion the CLI writes to Azure DevOps,
+editing with atomic save, a visual Plan/Apply gate over the CLI's own
+dry-run/`--go` semantics, and import-CSV export byte-identical to `gen-csv`.
+The C# engine is kept honest by a parity suite that runs the real Python
+modules on every build. See [desktop/README.md](desktop/README.md) to run it,
+and [desktop/docs/](desktop/docs/) for the PRD, FSD, architecture, design
+system, and project tracking.
 
 ## Install
 
@@ -159,6 +163,52 @@ UI. Each key is an ADO identity; its value lists the Issue codes that person own
 - Setting `System.AssignedTo` needs only the PAT's **Work Items: Read & Write**
   scope — no special project ACL (unlike `sprints`).
 
+### `set-state`
+
+Boards carry work that no backlog reconcile can see: a Task whose bullet has
+left the backlog, a straggler blocking `close-children`, an item another team
+moved mid-cascade. `set-state ID ... --go` moves exactly those items, by id,
+with no derivation from the backlog:
+
+```bash
+ado-board-sync set-state 1041 1042            # plan: move to states.done
+ado-board-sync set-state 1043 --state Doing   # any named target state
+```
+
+The ids must exist on this project's board. Ticking applies only when the
+target state is the configured terminal state.
+
+### `advance` — start Issues from git evidence
+
+A board understates progress: an Issue sits in its start state while its feature
+branch already holds real commits. `advance` reads local repositories, matches
+branch names against Issue codes, and moves each still-in-start-state Issue to
+the working state:
+
+```bash
+ado-board-sync advance --repo ~/src/your-api --repo ../sibling-repo [--base origin/main]
+```
+
+Two things it refuses to do, deliberately:
+
+- It only ever makes the *start → working* transition. Once work demonstrably
+  began, that state is true whatever happens next, so the write is safe.
+- It never sets done from git evidence: merge detection fails in both directions
+  (an empty branch with a ticket code in the wrong repository reads as merged; a
+  squash-merged branch reads as unmerged). Completion is a human decision backed
+  by a merged pull request.
+
+Both state names come from your process template and must be configured:
+
+```json
+"states": { "done": "Done", "todo": "New", "doing": "Active" }
+```
+
+(Agile/CMMI commonly read `New`/`Active`; Scrum uses `To Do`/`Doing`; Basic's
+backlog items use `New`/`Active` too. Values are written verbatim, so they must
+be exact.) Each repository is fetched before probing unless `--no-fetch`, and a
+failed fetch skips that repository rather than probe stale refs.
+
 ### Credentials
 
 Provide a Personal Access Token with **Work Items: Read & Write** scope, either:
@@ -190,9 +240,12 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 | `sprints` | Create the configured iterations and assign Issues (+ child Tasks) to them |
 | `sync-one CODE --sprint NAME --go` | Create or update one Issue and its iteration only; it never changes Tasks or assignees |
 | `assign` | Set each Issue's (and child Tasks') assignee from the `assignees` config |
+| `set-state ID ...` | Set one or more work items' state directly by id (close stragglers that live outside any backlog reconcile). A leading `[ ]` in the title is ticked when the target is the terminal state; `--state NAME` targets any state, `--no-tick` never rewrites titles |
+| `advance --repo PATH ...` | Read local repositories and move each backlog Issue whose branch holds commits beyond the base ref from `states.todo` to `states.doing`. Never sets done from git evidence (see below) |
 
 `gen-csv`, `check-html`, and `audit` never modify the board. `import`, `resync`,
-`resync-tasks`, `close-children`, `dedup`, `sprints`, `assign`, and `sync` print their plan and require `--go` to write.
+`resync-tasks`, `close-children`, `dedup`, `sprints`, `assign`, `sync`,
+`set-state`, and `advance` print their plan and require `--go` to write.
 `close-children` and `assign` are intentionally excluded from `sync`: `sync` is a structural
 reconcile, whereas closing items or setting owners changes workflow/ownership metadata, so each
 must be run explicitly.
@@ -238,7 +291,24 @@ PYTHONPATH=src python3 -m unittest discover -s tests -t . -v
 
 The suite covers the parser, Markdown/HTML conversion, CSV round-trip, config
 loading/credential resolution, and the command logic (against an in-memory fake
-Azure DevOps client — no network access required).
+Azure DevOps client — no network access required), plus:
+
+- `test_client.py` — the REST client's retry/backoff/idempotency rules and its keep-alive
+  connection reuse, against a mocked `http.client.HTTPSConnection`.
+- `test_performance.py` — regression coverage pinning the request count of `resync-tasks`,
+  `sprints`, `assign`, `dedup`, and `audit` flat as the number of Issues grows (the N+1 patterns
+  that used to make them slow on large boards).
+- `test_integration.py` — `cli.main()`'s `sync` composition (gen-csv → check-html → import →
+  resync → resync-tasks → audit) end to end against the fake client, including its
+  abort-before-any-write behavior on malformed markup.
+- `test_gitstate.py` — the `advance` command's evidence rules (which branches count, which states
+  move) with the git boundary stubbed.
+- `test_e2e.py` — the real `ado-board-sync` process: argument parsing, config/PAT loading, and
+  the network-free commands (`gen-csv`, `check-html`), run as a subprocess the way a user does.
+
+Apply phases (`resync`, `resync-tasks`, `close-children`, `dedup`, `sprints`, `assign`,
+`set-state`, `advance`) write their independent work items concurrently across pooled worker
+threads; plan order still governs reporting, so output is deterministic either way.
 
 ## Troubleshooting
 

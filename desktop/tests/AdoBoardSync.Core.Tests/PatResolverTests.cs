@@ -1,4 +1,5 @@
 using AdoBoardSync.Core.Configuration;
+using AdoBoardSync.Core.Results;
 
 namespace AdoBoardSync.Core.Tests;
 
@@ -117,7 +118,7 @@ public class PatResolverTests : IDisposable
     {
         public string Name => name;
 
-        public string? TryRead() => token;
+        public Result<string?> TryRead() => token;
     }
 
     private sealed class ScopedEnvironmentVariable : IDisposable

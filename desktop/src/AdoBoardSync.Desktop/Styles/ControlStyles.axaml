@@ -1,0 +1,361 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ================================================================== -->
+    <!--  Controls                                                           -->
+    <!--  Sizes, radii and colours all come from Theme.axaml; nothing below   -->
+    <!--  carries a literal that a view could contradict.                     -->
+    <!--                                                                      -->
+    <!--  Fluent paints hover, press and check states onto the template's     -->
+    <!--  ContentPresenter, not onto the control, so a class that only sets   -->
+    <!--  Background on the control reverts to Fluent grey the moment the     -->
+    <!--  pointer touches it. Every interactive state below is therefore      -->
+    <!--  written against /template/ ContentPresenter.                        -->
+    <!-- ================================================================== -->
+
+    <!-- ================================================================ -->
+    <!--  Buttons                                                          -->
+    <!--  DESIGN-SYSTEM §5: a read-only action (Open, Reload, Generate      -->
+    <!--  Plan) is always "quiet". "accent" is reserved for the higher-      -->
+    <!--  emphasis action, so Apply can never look like a safe one.          -->
+    <!-- ================================================================ -->
+
+    <Style Selector="Button.accent">
+        <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource ButtonPadding}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="MinWidth" Value="{DynamicResource ButtonMinWidth}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.accent:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentEndBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.accent:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentEndBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.accent:disabled /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="Button.accent:disabled">
+        <Setter Property="Opacity" Value="0.45" />
+    </Style>
+
+    <Style Selector="Button.quiet">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource QuietButtonPadding}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="MinWidth" Value="{DynamicResource ButtonMinWidth}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.quiet:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+    </Style>
+    <Style Selector="Button.quiet:pressed /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+    </Style>
+    <Style Selector="Button.quiet:disabled">
+        <Setter Property="Opacity" Value="0.45" />
+    </Style>
+
+    <!-- A glyph-only action. Square, so a row of them keeps an even rhythm. -->
+    <Style Selector="Button.iconButton">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Width" Value="{DynamicResource IconButtonSize}" />
+        <Setter Property="Height" Value="{DynamicResource IconButtonSize}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+        <Setter Property="HorizontalContentAlignment" Value="Center" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Button.iconButton:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
+    <Style Selector="Button.iconButton:pointerover TextBlock.icon">
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="Button.iconButton:disabled">
+        <Setter Property="Opacity" Value="0.35" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Navigation                                                       -->
+    <!-- ================================================================ -->
+
+    <Style Selector="ListBox#NavList">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <Style Selector="ListBox#NavList ListBoxItem">
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource RowPadding}" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+    <Style Selector="ListBox#NavList ListBoxItem:pointerover /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    </Style>
+    <Style Selector="ListBox#NavList ListBoxItem:selected /template/ ContentPresenter">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Backlog tree                                                     -->
+    <!--  The tree sits directly on the rail: no box of its own, the rail   -->
+    <!--  surface does that job.                                           -->
+    <!-- ================================================================ -->
+
+    <Style Selector="TreeView.backlog">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+    </Style>
+    <!-- Epics start open. Collapsed, the rail shows six headings and no way to
+         reach an Issue without expanding every one of them first. -->
+    <Style Selector="TreeView.backlog TreeViewItem">
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="IsExpanded" Value="True" />
+    </Style>
+    <Style Selector="TreeView.backlog TreeViewItem:pointerover /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    </Style>
+    <Style Selector="TreeView.backlog TreeViewItem:selected /template/ Border#PART_LayoutRoot">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Panes and cards                                                  -->
+    <!-- ================================================================ -->
+
+    <Style Selector="Border.card">
+        <Setter Property="Background" Value="{DynamicResource ShellBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+        <Setter Property="Padding" Value="{DynamicResource CardPadding}" />
+    </Style>
+
+    <!-- One half of the split editor. Clipped so the monospace text inside
+         cannot paint over the rounded corner. -->
+    <Style Selector="Border.pane">
+        <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusLg}" />
+        <Setter Property="ClipToBounds" Value="True" />
+    </Style>
+
+    <Style Selector="Border.paneHeader">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,0,1" />
+        <Setter Property="Padding" Value="{DynamicResource RowPadding}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Form fields                                                      -->
+    <!-- ================================================================ -->
+
+    <Style Selector="TextBox.field">
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource FieldPadding}" />
+        <Setter Property="MinHeight" Value="36" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource ShellBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+    </Style>
+    <Style Selector="TextBox.field:pointerover /template/ Border#PART_BorderElement">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="Background" Value="{DynamicResource ShellBackgroundBrush}" />
+    </Style>
+    <Style Selector="TextBox.field:focus /template/ Border#PART_BorderElement">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Background" Value="{DynamicResource ShellBackgroundBrush}" />
+    </Style>
+
+    <Style Selector="CheckBox">
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Editor surfaces                                                  -->
+    <!-- ================================================================ -->
+
+    <Style Selector="TextBox.editor">
+        <Setter Property="FontFamily" Value="{DynamicResource EditorFontFamily}" />
+        <Setter Property="FontSize" Value="{DynamicResource FontSizeBody}" />
+        <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="CornerRadius" Value="0" />
+        <Setter Property="Padding" Value="{DynamicResource EditorPadding}" />
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="IsReadOnly" Value="True" />
+    </Style>
+    <Style Selector="TextBox.editor /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.editor:pointerover /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+    <Style Selector="TextBox.editor:focus /template/ Border#PART_BorderElement">
+        <Setter Property="Background" Value="{DynamicResource EditorBackgroundBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- The editor pane that takes typing. Kept as a class rather than flipping
+         the base style, because the generated-markup pane must stay read-only. -->
+    <Style Selector="TextBox.editor.editable">
+        <Setter Property="IsReadOnly" Value="False" />
+        <Setter Property="AcceptsReturn" Value="True" />
+        <Setter Property="CaretBrush" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Badges, chips and avatars                                        -->
+    <!--  DESIGN-SYSTEM §5.3: a badge always carries a glyph AND a label,   -->
+    <!--  never colour alone.                                              -->
+    <!-- ================================================================ -->
+
+    <Style Selector="Border.badge">
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+        <Setter Property="Padding" Value="{DynamicResource BadgePadding}" />
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+    <Style Selector="Border.badge.solid">
+        <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="Border.badge.ok">
+        <Setter Property="Background" Value="{DynamicResource StatusOkBrush}" />
+    </Style>
+    <Style Selector="Border.badge.error">
+        <Setter Property="Background" Value="{DynamicResource ValidationErrorBrush}" />
+    </Style>
+
+    <!-- Plan operations. The fill is the third signal only: every one of these is
+         rendered with its glyph and its word beside it (DESIGN-SYSTEM §5.3), so a
+         colourblind reader loses nothing. -->
+    <Style Selector="Border.badge.create">
+        <Setter Property="Background" Value="{DynamicResource PlanCreateBrush}" />
+    </Style>
+    <Style Selector="Border.badge.update">
+        <Setter Property="Background" Value="{DynamicResource PlanUpdateBrush}" />
+    </Style>
+    <!-- A delete is the one operation this app cannot undo, so unlike the other
+         plan operations its badge is a solid fill (DESIGN-SYSTEM §5.3), joining
+         ok/error in taking the on-accent label colour below. -->
+    <Style Selector="Border.badge.delete">
+        <Setter Property="Background" Value="{DynamicResource PlanDeleteBrush}" />
+    </Style>
+    <Style Selector="Border.badge.unchanged">
+        <Setter Property="Background" Value="{DynamicResource PlanUnchangedBrush}" />
+    </Style>
+    <Style Selector="Border.badge.create > TextBlock.onAccent,
+                     Border.badge.update > TextBlock.onAccent,
+                     Border.badge.unchanged > TextBlock.onAccent">
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+    </Style>
+
+    <!-- A Delete row carries a heavier border, not just a colour, so it cannot be
+         skimmed past in a long Plan (DESIGN-SYSTEM §5.5). -->
+    <Style Selector="Border.planRow.destructive">
+        <Setter Property="BorderBrush" Value="{DynamicResource PlanDeleteBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+
+    <Style Selector="Border.planRow">
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+        <Setter Property="Padding" Value="{DynamicResource RowPadding}" />
+        <Setter Property="Margin" Value="0,0,0,6" />
+    </Style>
+    <!-- On the soft fill the label takes the accent colour rather than the
+         on-accent colour, which is only legible against a solid one. -->
+    <Style Selector="Border.badge > TextBlock.onAccent">
+        <Setter Property="Foreground" Value="{DynamicResource AppAccentBrush}" />
+    </Style>
+    <Style Selector="Border.badge.solid > TextBlock.onAccent,
+                     Border.badge.delete > TextBlock.onAccent,
+                     Border.badge.ok > TextBlock.onAccent,
+                     Border.badge.error > TextBlock.onAccent">
+        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+    </Style>
+
+    <Style Selector="Border.avatar">
+        <Setter Property="Background" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusSm}" />
+        <Setter Property="Width" Value="{DynamicResource AvatarSizeMd}" />
+        <Setter Property="Height" Value="{DynamicResource AvatarSizeMd}" />
+    </Style>
+
+    <Style Selector="Border.chip">
+        <Setter Property="Padding" Value="{DynamicResource ChipPadding}" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusPill}" />
+        <Setter Property="Background" Value="{DynamicResource CardBackgroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Splitter                                                         -->
+    <!-- ================================================================ -->
+
+    <Style Selector="GridSplitter">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="GridSplitter:pointerover">
+        <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  State blocks                                                     -->
+    <!-- ================================================================ -->
+
+    <Style Selector="StackPanel.statePanel">
+        <Setter Property="Spacing" Value="{DynamicResource SpacingS}" />
+        <Setter Property="HorizontalAlignment" Value="Center" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="MaxWidth" Value="380" />
+    </Style>
+
+</Styles>
