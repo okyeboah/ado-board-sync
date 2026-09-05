@@ -14,8 +14,8 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 4 | 8 | 13 |
-| **Closed** | | | | | 46 |
+| **Open** | 0 | 1 | 4 | 6 | 11 |
+| **Closed** | | | | | 48 |
 
 Total tracked: **59**.
 
@@ -69,19 +69,13 @@ first run.
 - **Remedy:** Populate the Requirement field on those items from the issue bodies. (Priority being unset is per spec — GITHUB-PROJECT.md says 'Unset until product owner prioritizes'.)
 
 
-### Low (8)
+### Low (6)
 
 #### `ac05-ac07-not-on-any-issue` — PRD-AC-05 and PRD-AC-07 are assigned to ABSD-302 in TRACEABILITY but issue #14 names only AC-04
 
 - **Category:** board
 - **Evidence:** TRACEABILITY's AC-05 row names ABSD-302; issue #14's body reads '**Requirement:** PRD-AC-04' only.
 - **Remedy:** Update #14's body to '**Requirement:** PRD-AC-04, PRD-AC-05, PRD-AC-07' so the issue and TRACEABILITY.md agree, then populate the Project Requirement field from it.
-
-#### `eleven-tickets-have-no-outcome` — A third of the tickets STATUS.md tracks are never defined in BACKLOG.md
-
-- **Category:** doc-accuracy
-- **Evidence:** The previous revision of this row named only ABSD-602, and its own remedy asked whether others were missing. They are. BACKLOG.md defines 26 tickets; STATUS.md tracks these eleven that it does not: **ABSD-104, 105, 108, 110, 111, 112, 306, 506, 507, 508, 602**. BACKLOG.md's stated job in PROJECT-TRACKING.md §0 is "What exactly does each ticket require?" — it cannot answer that for any of them, and every one is already built or part-built, so the answer would now be written from the code rather than the other way round.
-- **Remedy:** Import the Outcomes from the GitHub issues, which is where they were actually agreed. Do not write them from the implementation: an Outcome derived from what was built cannot disagree with it, and a ticket that cannot fail its own acceptance is not a ticket. Where no issue exists either, the honest fix is to delete the STATUS row and admit the work was unticketed.
 
 #### `config-writeback-unticketed` — The FSD contract's 'Save iteration config' and 'Save assignee config' operations are in no ticket's Outcome
 
@@ -113,18 +107,14 @@ first run.
 - **Evidence:** MECE-AUDIT.md:86 'all 15 documented constructs appear in a fixture.' ParityCoverageTests.cs has 14 [InlineData] rows, and `--list-tests` shows 15 ParityCoverageTests = 14 theory rows + 1 fact.
 - **Remedy:** Either fix MECE-AUDIT.md:86 to 14, or add the missing construct (FSD §3.2.3 also names pipe-table header rows and line-wrap/blank-line rules, which the guard does not enumerate separately).
 
-#### `two-local-data-directory-names` — This machine's data lands in two differently named directories under one root
-
-- **Category:** consistency
-- **Evidence:** `LocalDataPaths.Root` is now the single root, but `JsonProfileRegistryStore` and `DiagnosticsPaths` ask it for `AdoBoardSync` while `SqliteOperationHistory` asks for `ado-board-sync`. A user looking for "where does this app keep my things" finds two folders side by side, and an uninstaller that removes one leaves the other.
-- **Remedy:** Pick one name. Renaming the history directory orphans any existing `history.db`, so the move needs a one-time migration or an explicit decision to drop pre-release history — which is why it was not folded into the change that introduced `LocalDataPaths`.
-
 ## Closed
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
 | `os-credential-store-untested` — The one component that touches a real secret had no test | high | 2026-09-05: `CredentialStoreTests`, 21 tests over the macOS Keychain adapter (including its exit-44 not-found mapping), secret-tool, the Windows store and the unavailable case. They run on every platform because `ProcessCredentialStore` now takes an injected `Runner`, so a test supplies what the tool would have said instead of spawning it — which is what made covering the macOS adapter on a Linux runner possible at all. Before this, deleting any of the three adapter bodies left the whole suite green. |
 | `credential-store-constructed-outside-the-composition-root` — A view model built its own adapter, bypassing the seam ABSD-106 exists to enforce | medium | 2026-09-05: `PlanViewModel` and `AuditViewModel` now resolve `ICredentialStore`, which `AppServices` had registered all along with nothing consuming it. The null-coalescing fallback is gone: it worked, which was the problem — a test or a platform that should have failed loudly got a real keychain instead. |
+| `eleven-tickets-have-no-outcome` — A third of the tickets STATUS.md tracks were defined in no BACKLOG.md Outcome | low | 2026-09-05: ABSD-104, 105, 108, 110, 111, 112, 306, 506, 507, 508 and 602 now have Outcomes, imported from issues #28, #29, #30, #34, #35, #27, #40, #41, #42, #43 and #44 — where they were actually agreed — rather than written from the code they now describe. BACKLOG.md goes from 26 tickets to 37. Each entry carries its Outcome and dependencies and points at its issue for the full criteria, so the file answers "what does this ticket require?" without duplicating twenty checkboxes that would then drift. |
+| `two-local-data-directory-names` — This machine's data landed in two differently named directories under one root | low | 2026-09-05: one name, `LocalDataPaths.DirectoryName`. The history moves across on first use through `LocalDataPaths.Adopted`, which is deliberately conservative — it moves only when there is nothing at the new path to lose and never deletes, so a failed move leaves the old file where it was and the app keeps reading it. Losing someone's operation history to a tidy-up would have been much worse than two folders. Three tests cover the move, the refusal to overwrite a live file, and the never-existed case. |
 | `desktop-code-never-ran-through-ci` — CI covered the desktop solution but had never run against any of this code | medium | 2026-09-05: pushed, and the workflow ran green over the whole tree at `2425e5b` — both CLI legs, the desktop build and headless Avalonia suite on ubuntu, and packaging on macOS, Windows and Linux. It took three runs. The first failed on all three package runners because `.gitignore` had swallowed `desktop/build/`; the second failed on Windows only, because Git-Bash there has no `zip`. Both defects existed for as long as the lane did and were invisible to every local run — which is the argument for this row having been open. |
 | `plan-covers-two-of-nine-commands` — The Plan Builder covers import, resync and resync-tasks; six CLI commands have no desktop equivalent | medium | 2026-09-05: all nine now plan. `PlanBuilder` exposes `BuildImport`, `BuildResync`, `BuildResyncTasks`, `BuildDedup`, `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `BuildSyncOne` and `BuildAudit`, under 62 builder tests plus 12 `PlanParityTests`. Closing this row uncovered a real defect on the way: `assign` compared only `uniqueName`, where the CLI compares uniqueName, id and displayName — a display-name config would have re-planned the same write on every run and never converged. |
 | `uncommitted-cli-changes-under-parity-gate` — The parity suite compares .NET against the working-tree Python, which had uncommitted CLI changes | medium | 2026-09-05: committed in `9f54b70`, which included the CLI-side modifications and `gitstate.py`. The parity suite now shells out to committed modules. Note the successor risk, tracked by `desktop-code-never-ran-through-ci`: committed is not pushed, so CI has still not run that comparison. |

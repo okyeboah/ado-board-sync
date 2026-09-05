@@ -515,7 +515,43 @@ public class AcceptanceTests
 
     [Fact]
     [Trait(Criterion, "PRD-AC-15")]
-    public async Task AnExternalEditIsReportedAndAReloadIsRequiredBeforeSaving()
+    public async Task AnExternalEditIsNoticedBeforeAnythingIsAttemptedAndBlocksPlanningUntilReloaded()
+    {
+        // The proactive half (ABSD-504). The save-time guard below only fires once
+        // the user has already done the work; this is what tells them first.
+        var board = new FakeBoardGateway();
+        var path = WriteBacklog("## Epic 1\n\n### PROJ-101 · One\n\nOriginal body.\n");
+        using var profile = TempBoardProfile.Create(path);
+
+        var shell = Shell.WithSurfaces(new ShellSurfaces(
+            Gate(board), new AuditViewModel(), new SprintPlanningViewModel(), new AssigneePlanningViewModel()));
+
+        await shell.LoadAsync(profile.ConfigPath);
+        await shell.CheckForExternalChangeAsync();
+        Assert.False(shell.IsStale);
+
+        await File.WriteAllTextAsync(path, "## Epic 1\n\n### PROJ-101 · One\n\nSomebody else wrote this.\n");
+        await shell.CheckForExternalChangeAsync();
+
+        Assert.True(shell.IsStale);
+        Assert.NotEmpty(shell.ExternalChangeText);
+
+        // Planning is refused with the reason, and the board is never read.
+        await shell.BoardPlan.GenerateAsync(shell.Workspace!);
+        Assert.True(shell.BoardPlan.HasError);
+        Assert.Contains("backlog.stale", shell.BoardPlan.ErrorText, StringComparison.Ordinal);
+        Assert.Equal(0, board.ReadCount);
+        AssertNothingWritten(board);
+
+        // The explicit reload is what clears it.
+        await shell.ReloadAsync();
+        Assert.False(shell.IsStale);
+        Assert.Contains("Somebody else wrote this", shell.Nodes[0].Children[0].Source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    [Trait(Criterion, "PRD-AC-15")]
+    public async Task ASaveStillRefusesToOverwriteAnExternalChangeAndKeepsTheBuffer()
     {
         var path = WriteBacklog("## Epic 1\n\n### PROJ-101 · One\n\nOriginal body.\n");
         using var profile = TempBoardProfile.Create(path);
