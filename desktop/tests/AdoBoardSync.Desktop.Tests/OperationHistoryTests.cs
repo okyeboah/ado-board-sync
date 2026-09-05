@@ -358,7 +358,7 @@ public class OperationHistoryTests
         var path = SqliteOperationHistory.DefaultDatabasePath();
 
         Assert.Equal("history.db", Path.GetFileName(path));
-        Assert.Equal("ado-board-sync", Path.GetFileName(Path.GetDirectoryName(path)));
+        Assert.Equal(LocalDataPaths.DirectoryName, Path.GetFileName(Path.GetDirectoryName(path)));
         Assert.StartsWith(LocalDataPaths.Root, path, StringComparison.Ordinal);
         Assert.True(Path.IsPathRooted(path));
     }

@@ -28,6 +28,6 @@ public static class DiagnosticsPaths
 
     private static string BuildDefaultDirectory()
     {
-        return Path.Combine(LocalDataPaths.Directory("AdoBoardSync"), "logs");
+        return Path.Combine(LocalDataPaths.Own(), "logs");
     }
 }

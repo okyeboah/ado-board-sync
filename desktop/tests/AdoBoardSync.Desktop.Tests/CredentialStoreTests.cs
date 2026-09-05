@@ -362,6 +362,71 @@ public class CredentialStoreTests
         }
     }
 
+    // ------------------------------------------------- where the data lives
+
+    [Fact]
+    public void EveryLocalDataPathSitsUnderOneDirectory()
+    {
+        // The registry, the log and the history used to land in two differently
+        // named folders side by side, so a user looking for "where does this app
+        // keep my things" found half of them.
+        var registry = Infrastructure.Configuration.JsonProfileRegistryStore.DefaultPath();
+        var logs = Infrastructure.Diagnostics.DiagnosticsPaths.DefaultDirectory;
+        var history = Infrastructure.Operations.SqliteOperationHistory.DefaultDatabasePath();
+
+        var expected = LocalDataPaths.Own();
+
+        Assert.Equal(expected, Path.GetDirectoryName(registry));
+        Assert.Equal(expected, Path.GetDirectoryName(logs));
+        Assert.Equal(expected, Path.GetDirectoryName(history));
+    }
+
+    [Fact]
+    public void AHistoryLeftUnderTheOldDirectoryNameIsAdoptedRatherThanAbandoned()
+    {
+        // Renaming the directory would otherwise silently start an empty history
+        // and leave the user's own runs somewhere nothing reads.
+        var legacy = Path.Combine(LocalDataPaths.Directory("ado-board-sync"), "adopted-fixture.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+        File.WriteAllText(legacy, "not really sqlite, but these are the bytes that must survive");
+
+        var resolved = LocalDataPaths.Adopted("adopted-fixture.db");
+
+        Assert.Equal(Path.Combine(LocalDataPaths.Own(), "adopted-fixture.db"), resolved);
+        Assert.True(File.Exists(resolved));
+        Assert.False(File.Exists(legacy));
+        Assert.Contains("must survive", File.ReadAllText(resolved), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AdoptionNeverOverwritesAHistoryThatIsAlreadyInTheNewPlace()
+    {
+        // Both files present means the move already happened and the app has been
+        // writing to the new one. Moving again would replace live history with a
+        // stale copy — the one outcome worse than two directories.
+        var legacy = Path.Combine(LocalDataPaths.Directory("ado-board-sync"), "kept-fixture.db");
+        var current = Path.Combine(LocalDataPaths.Own(), "kept-fixture.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(legacy)!);
+        Directory.CreateDirectory(Path.GetDirectoryName(current)!);
+        File.WriteAllText(legacy, "the old one");
+        File.WriteAllText(current, "the live one");
+
+        var resolved = LocalDataPaths.Adopted("kept-fixture.db");
+
+        Assert.Equal(current, resolved);
+        Assert.Equal("the live one", File.ReadAllText(current));
+        Assert.True(File.Exists(legacy), "The old file was removed rather than left alone.");
+    }
+
+    [Fact]
+    public void AdoptionOfAFileThatWasNeverThereJustNamesTheNewPlace()
+    {
+        var resolved = LocalDataPaths.Adopted("never-existed-fixture.db");
+
+        Assert.Equal(Path.Combine(LocalDataPaths.Own(), "never-existed-fixture.db"), resolved);
+        Assert.False(File.Exists(resolved));
+    }
+
     [Fact]
     public void RunningAToolThatIsNotOnThisMachineIsAnUnavailableStoreNotACrash()
     {

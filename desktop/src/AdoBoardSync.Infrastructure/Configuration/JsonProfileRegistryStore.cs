@@ -31,7 +31,7 @@ public sealed class JsonProfileRegistryStore : IProfileRegistryStore
 
     public static string DefaultPath()
     {
-        return Path.Combine(LocalDataPaths.Directory("AdoBoardSync"), "profiles.json");
+        return Path.Combine(LocalDataPaths.Own(), "profiles.json");
     }
 
     public Result<ProfileRegistry> Read()

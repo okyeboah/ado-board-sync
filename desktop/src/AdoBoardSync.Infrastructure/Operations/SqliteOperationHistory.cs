@@ -41,7 +41,9 @@ public sealed class SqliteOperationHistory : IOperationHistory, IAgentRunHistory
     /// </summary>
     public static string DefaultDatabasePath()
     {
-        return Path.Combine(LocalDataPaths.Directory("ado-board-sync"), "history.db");
+        // Adopted rather than simply named: an installation that already has a
+        // history.db under the old directory keeps it, moved across on first use.
+        return LocalDataPaths.Adopted("history.db");
     }
 
     public Task<Result<long>> BeginRunAsync(
