@@ -68,6 +68,14 @@ public sealed partial class PlanViewModel : ObservableObject
     /// </summary>
     public Func<bool>? UnsavedEditsCheck { get; set; }
 
+    /// <summary>
+    ///     True when the backlog file has been changed on disk since the profile was
+    ///     opened. A Plan is computed from what this app last read, so planning
+    ///     against a file somebody else has since rewritten would review one text and
+    ///     write another (ABSD-504, PRD-AC-15).
+    /// </summary>
+    public Func<bool>? StaleProfileCheck { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsImport))]
     [NotifyPropertyChangedFor(nameof(IsResync))]
@@ -536,16 +544,30 @@ public sealed partial class PlanViewModel : ObservableObject
     /// </summary>
     private bool BlockedByUnsavedEdits(string action)
     {
-        if (UnsavedEditsCheck?.Invoke() != true)
+        if (UnsavedEditsCheck?.Invoke() == true)
         {
-            return false;
+            ErrorText =
+                "The backlog has unsaved edits. Save them first — a Plan is computed from "
+                + "the file, and the file is the source of truth. (backlog.unsaved)";
+            StatusText = $"Save the backlog before {action}.";
+            return true;
         }
 
-        ErrorText =
-            "The backlog has unsaved edits. Save them first — a Plan is computed from "
-            + "the file, and the file is the source of truth. (backlog.unsaved)";
-        StatusText = $"Save the backlog before {action}.";
-        return true;
+        // Checked second because it is the rarer of the two, and because a user with
+        // unsaved edits needs to hear about those first — reloading would discard
+        // them, so telling them to reload before telling them they have work in the
+        // buffer would invite exactly the wrong action (ABSD-504).
+        if (StaleProfileCheck?.Invoke() == true)
+        {
+            ErrorText =
+                "The backlog file has changed on disk since this profile was opened. "
+                + "Reload before continuing — otherwise the Plan would be computed from "
+                + "text this app no longer holds. (backlog.stale)";
+            StatusText = $"Reload the backlog before {action}.";
+            return true;
+        }
+
+        return false;
     }
 
     /// <summary>

@@ -177,6 +177,16 @@ public sealed class ProfileLoader(IBacklogFileStore store)
 
     /// <summary>True when a file is already at this path — the overwrite prompt reads it.</summary>
     public bool Exists(string path) => _store.Exists(path);
+
+    /// <summary>
+    /// The stamp of a file as it is on disk now, off the calling thread (ABSD-504).
+    ///
+    /// It runs on the pool for the same reason every other read here does: the
+    /// staleness poll happens while the user is working, and a backlog on a slow
+    /// network share would otherwise stall the render thread on a timer tick.
+    /// </summary>
+    public Task<Result<FileStamp>> StampAsync(string path, CancellationToken cancellationToken = default) =>
+        Task.Run(() => _store.Stamp(path), cancellationToken);
 }
 
 /// <summary>What one CSV export wrote, for the report the window shows afterwards.</summary>
