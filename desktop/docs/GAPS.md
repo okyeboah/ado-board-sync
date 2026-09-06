@@ -14,10 +14,10 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 4 | 6 | 11 |
+| **Open** | 0 | 1 | 4 | 7 | 12 |
 | **Closed** | | | | | 48 |
 
-Total tracked: **59**.
+Total tracked: **60**.
 
 Last reconciled 2026-09-05, against commit `0d9cf52` plus the uncommitted
 working tree. The closed count is a recount of the rows themselves: an earlier
@@ -69,7 +69,13 @@ first run.
 - **Remedy:** Populate the Requirement field on those items from the issue bodies. (Priority being unset is per spec — GITHUB-PROJECT.md says 'Unset until product owner prioritizes'.)
 
 
-### Low (6)
+### Low (7)
+
+#### `sync-one-has-no-parity-test` — Eight of the nine planned commands are compared against the Python; `sync-one` is not
+
+- **Category:** test
+- **Evidence:** `BuildSyncOne` has 8 tests in `PlanBuilderLifecycleTests` and zero mentions in `PlanParityTests`, where `assign` has 15 and `resync`, `close-children` and `audit` have 4 each. STATUS.md's ABSD-302 row reads "All nine CLI commands plan … 62 builder tests plus 12 `PlanParityTests`" — true of the totals, not of the ninth command. `plan-covers-two-of-nine-commands` was closed on that same sentence.
+- **Remedy:** Add a `sync-one` scenario to `PlanParityTests`. It is the command most likely to drift unnoticed: it takes a single issue code, so a divergence shows on one item rather than across a whole plan — the same shape the `assign` uniqueName defect had before parity caught it.
 
 #### `ac05-ac07-not-on-any-issue` — PRD-AC-05 and PRD-AC-07 are assigned to ABSD-302 in TRACEABILITY but issue #14 names only AC-04
 
