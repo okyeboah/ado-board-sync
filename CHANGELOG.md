@@ -107,6 +107,13 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
   conversations. The Plan gate and the profile loader now emit the declared
   events, which name failed rows by issue code only.
 
+- The Sprints and Assignees tables reloaded through a profile loader they built
+  themselves, so saving from either emitted none of the file-write diagnostics
+  above: the loader they constructed was wired to a null sink, while the
+  registered one logs. The container now supplies the reload to both. This is
+  the same defect as the board connector and the credential store, in the third
+  place it occurred.
+
 ### Removed
 
 - `CompositeDiagnostics`: its only caller was its own test, and the application
