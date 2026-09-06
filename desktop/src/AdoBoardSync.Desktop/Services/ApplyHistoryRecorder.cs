@@ -5,8 +5,13 @@ using AdoBoardSync.Core.Planning;
 namespace AdoBoardSync.Desktop.Services;
 
 /// <summary>
-///     Records one Apply run in the operation history as it happens (ABSD-501),
-///     and mirrors the same moments into diagnostics (ABSD-507).
+///     Records one Apply run in the operation history as it happens (ABSD-501).
+///
+///     It reports its own failures to diagnostics but does not narrate the Apply.
+///     The started/finished/row-failed events it wrote by hand duplicated
+///     DiagnosticsExtensions in a second vocabulary; the Plan gate emits those now
+///     (ABSD-507). What remains here is what only this class knows: that the
+///     history store would not take a write.
 ///
 ///     It sits between the Plan gate and the store rather than inside either,
 ///     because recording must not be able to fail the write it is recording. Every
@@ -89,19 +94,6 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
             _runId = begun.Value;
         }
 
-        _diagnostics.Write(new DiagnosticEvent
-        {
-            Timestamp = startedAt,
-            Level = DiagnosticLevel.Info,
-            Category = "apply",
-            Message = $"Apply started: {command}",
-            Data = new Dictionary<string, string>
-            {
-                ["profile"] = profileKey,
-                ["command"] = command.ToString(),
-                ["run"] = begun.Value.ToString(),
-            },
-        });
     }
 
     /// <summary>Appends one row's outcome, in the reviewed Plan's own order.</summary>
@@ -174,21 +166,9 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
             Report("apply.outcome_unrecorded", recorded.Error!.SafeMessage);
         }
 
-        if (!outcome.Succeeded)
-        {
-            _diagnostics.Write(new DiagnosticEvent
-            {
-                Timestamp = at,
-                Level = DiagnosticLevel.Warning,
-                Category = "apply",
-                Message = $"Row failed: {outcome.Message}",
-                Data = new Dictionary<string, string>
-                {
-                    ["title"] = outcome.Row.Title,
-                    ["operation"] = outcome.Row.Operation.ToString(),
-                },
-            });
-        }
+        // A failed row is not reported here: the Plan gate's ApplyFinished names
+        // every failed row by issue code. This event named it by title, which is
+        // the user's own prose in a file they attach to support conversations.
     }
 
     /// <summary>Closes the run with its totals. A completed run never re-opens.</summary>
@@ -227,19 +207,6 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
             Report("apply.run_unclosed", completed.Error!.SafeMessage);
         }
 
-        _diagnostics.Write(new DiagnosticEvent
-        {
-            Timestamp = finishedAt,
-            Level = failed == 0 ? DiagnosticLevel.Info : DiagnosticLevel.Warning,
-            Category = "apply",
-            Message = $"Apply finished: {summary}",
-            Data = new Dictionary<string, string>
-            {
-                ["run"] = runId.ToString(),
-                ["succeeded"] = succeeded.ToString(),
-                ["failed"] = failed.ToString(),
-            },
-        });
     }
 
     /// <summary>

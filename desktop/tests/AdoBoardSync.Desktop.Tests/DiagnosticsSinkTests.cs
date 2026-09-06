@@ -223,17 +223,6 @@ public class DiagnosticsSinkTests
     }
 
     [Fact]
-    public void ACompositeKeepsWritingWhenOneSinkThrows()
-    {
-        var recorded = new InMemoryDiagnostics();
-        var composite = new CompositeDiagnostics(new ThrowingDiagnostics(), recorded);
-
-        Assert.Null(Record.Exception(() => composite.Write(Info("still recorded"))));
-        Assert.Single(recorded.Events);
-        Assert.Equal("still recorded", recorded.Events[0].Message);
-    }
-
-    [Fact]
     public void TheBundleCarriesTheLogsAndAnEnvironmentSummary()
     {
         InTempDirectory(directory =>
@@ -361,12 +350,6 @@ public class DiagnosticsSinkTests
             Assert.Equal("diagnostics.unwritten", written.Error!.Code);
             Assert.Equal(ErrorKind.SourceFailure, written.Error.Kind);
         });
-    }
-
-    private sealed class ThrowingDiagnostics : IDiagnostics
-    {
-        public void Write(DiagnosticEvent diagnosticEvent) =>
-            throw new InvalidOperationException("this sink is broken");
     }
 
     private static DiagnosticEvent Info(string message) => new()

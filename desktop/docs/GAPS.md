@@ -15,19 +15,18 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
 | **Open** | 0 | 1 | 4 | 7 | 12 |
-| **Closed** | | | | | 48 |
+| **Closed** | | | | | 52 |
 
-Total tracked: **60**.
+Total tracked: **64**.
 
-Last reconciled 2026-09-05, against commit `0d9cf52` plus the uncommitted
-working tree. The closed count is a recount of the rows themselves: an earlier
-revision's totals line said 39 while its table held 40. Both columns above are
-counted from the rows below, not carried forward.
+Last reconciled 2026-09-06, against commit `9ac8f24`. The closed count is a
+recount of the rows themselves: an earlier revision's totals line said 39 while
+its table held 40. Both columns above are counted from the rows below, not
+carried forward.
 
-The three rows added in this reconciliation were all found by the work that
-closed ABSD-108 and ABSD-503 — a UI harness and an acceptance suite exist to
-turn "nobody has checked" into a row here, and each of them did so on its
-first run.
+The four rows added in this reconciliation came from a whole-repo
+over-engineering audit. All four are the same shape: something built, registered
+or declared, then called by nothing.
 
 ## Open
 
@@ -117,6 +116,10 @@ first run.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `board-gateway-constructed-outside-the-composition-root` — The connector was built by its callers rather than resolved | high | 2026-09-06: `IBoardGatewayFactory` and `AzureDevOpsGatewayFactory` were registered in `AppServices` and resolved by nobody; `PlanViewModel` and `AuditViewModel` each defaulted to `pat => new AzureDevOpsGateway(pat)`. Port and adapter deleted, the container binds the `Func<string, IBoardGateway>` both callers already took, and the fallback throws instead of building a real connector. `CompositionRootTests`' sweep could not catch it: it matches `I…Store\|Reader\|Writer\|Source`, and proves a port is bound, never that anything resolves it. `OperationsWiringTests` now proves a Plan generated through the container reaches the registered board; checked by mutation. |
+| `acceptance-test-called-a-real-board-on-every-run` — One test made a live `dev.azure.com` request each run | high | 2026-09-06: surfaced by the row above. `AcceptanceTests.SwitchingProfileMixesNothingFromThePreviousOne` set a token and generated a Plan with no gateway supplied, so it built a real connector; it passed because the network failure landed in `ErrorText`, which it never asserted on. Now uses `FakeBoardGateway` and asserts the Plan generated. |
+| `diagnostics-vocabulary-declared-and-never-called` — ABSD-507's five events had no production caller, and the one class that did log wrote item titles | high | 2026-09-06: `DiagnosticsExtensions` declared the events; `ApplyHistoryRecorder` was the only emitter and built its own, including `["title"] = outcome.Row.Title` — the user's prose, in a file attached to support conversations, against the extensions' own rule of naming failed rows by code. The Plan gate now emits `PlanGenerated`/`ApplyStarted`/`ApplyFinished`/`OperationFailed`; `ProfileLoader` emits `FileWritten`; the recorder reports only history-store failures. STATUS.md's ABSD-507 row asserted these were already written and is corrected in the same change. |
+| `test-only-sink-shipped-in-the-application-assembly` — `InMemoryDiagnostics` shipped in Infrastructure, beside a composite nothing composed | low | 2026-09-06: `CompositeDiagnostics` deleted — sole caller was its own test, and the app registers one sink. `InMemoryDiagnostics` moved to `AdoBoardSync.TestKit`, so the assembly boundary enforces what its "do not wire this into the application" comment asked for. |
 | `os-credential-store-untested` — The one component that touches a real secret had no test | high | 2026-09-05: `CredentialStoreTests`, 21 tests over the macOS Keychain adapter (including its exit-44 not-found mapping), secret-tool, the Windows store and the unavailable case. They run on every platform because `ProcessCredentialStore` now takes an injected `Runner`, so a test supplies what the tool would have said instead of spawning it — which is what made covering the macOS adapter on a Linux runner possible at all. Before this, deleting any of the three adapter bodies left the whole suite green. |
 | `credential-store-constructed-outside-the-composition-root` — A view model built its own adapter, bypassing the seam ABSD-106 exists to enforce | medium | 2026-09-05: `PlanViewModel` and `AuditViewModel` now resolve `ICredentialStore`, which `AppServices` had registered all along with nothing consuming it. The null-coalescing fallback is gone: it worked, which was the problem — a test or a platform that should have failed loudly got a real keychain instead. |
 | `eleven-tickets-have-no-outcome` — A third of the tickets STATUS.md tracks were defined in no BACKLOG.md Outcome | low | 2026-09-05: ABSD-104, 105, 108, 110, 111, 112, 306, 506, 507, 508 and 602 now have Outcomes, imported from issues #28, #29, #30, #34, #35, #27, #40, #41, #42, #43 and #44 — where they were actually agreed — rather than written from the code they now describe. BACKLOG.md goes from 26 tickets to 37. Each entry carries its Outcome and dependencies and points at its issue for the full criteria, so the file answers "what does this ticket require?" without duplicating twenty checkboxes that would then drift. |

@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using AdoBoardSync.Core.Board;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Diagnostics;
@@ -151,13 +152,26 @@ public sealed partial class PlanViewModel : ObservableObject
     /// </summary>
     private readonly DiagnosticRedaction? _redaction;
 
+    /// <summary>
+    ///     Where this gate's own events go (ABSD-507, ARCHITECTURE.md §7). The gate
+    ///     is the right emitter for them because it is the only place that holds a
+    ///     Plan, the duration it took, and the typed error a refusal produced — and
+    ///     because every one of these events is about the operation rather than
+    ///     about the store that records it.
+    /// </summary>
+    private readonly IDiagnostics _diagnostics;
+
     public PlanViewModel(
         Func<string, IBoardGateway>? gatewayFactory = null,
         ICredentialStore? credentialStore = null,
         ApplyHistoryRecorder? recorder = null,
-        DiagnosticRedaction? redaction = null)
+        DiagnosticRedaction? redaction = null,
+        IDiagnostics? diagnostics = null)
     {
-        _gatewayFactory = gatewayFactory ?? (pat => new AzureDevOpsGateway(pat));
+        // Not `pat => new AzureDevOpsGateway(pat)`. The composition root registers
+        // the delegate and injects it here; a default that builds a real connector
+        // hides a missing registration behind a live call to somebody's board.
+        _gatewayFactory = gatewayFactory ?? NoGatewayConfigured;
         // Not OsCredentialStore.ForThisPlatform(). The composition root registers
         // the platform's store and injects it here; this fallback is for a view
         // model built outside the container, and it must be the *empty* store
@@ -169,12 +183,23 @@ public sealed partial class PlanViewModel : ObservableObject
             ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
         _recorder = recorder;
         _redaction = redaction;
+        _diagnostics = diagnostics ?? NullDiagnostics.Instance;
 
         // Both are derived from a collection, which does not raise for them. Wired
         // here rather than at each mutation site, so a third mutation cannot forget.
         Outcomes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOutcomes));
         Notes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNotes));
     }
+
+    /// <summary>
+    ///     The factory a view model gets when nobody supplied one. It refuses rather
+    ///     than building a real connector, and is unreachable through the container,
+    ///     which binds the delegate.
+    /// </summary>
+    private static IBoardGateway NoGatewayConfigured(string personalAccessToken) =>
+        throw new InvalidOperationException(
+            "No board gateway factory was supplied to this PlanViewModel. Resolve it from "
+            + "AppServices rather than constructing the view model directly.");
 
     public ObservableCollection<PlanRow> Rows { get; } = [];
 
@@ -318,6 +343,8 @@ public sealed partial class PlanViewModel : ObservableObject
         Outcomes.Clear();
         StatusText = "Reading the board…";
 
+        var startedGenerating = Stopwatch.GetTimestamp();
+
         try
         {
             var gateway = _gatewayFactory(token);
@@ -328,6 +355,7 @@ public sealed partial class PlanViewModel : ObservableObject
                 {
                     ErrorText = $"{snapshot.Error!.SafeMessage} ({snapshot.Error.Code})";
                     StatusText = "Could not read the board.";
+                    _diagnostics.OperationFailed("plan", snapshot.Error);
                     return;
                 }
 
@@ -336,10 +364,12 @@ public sealed partial class PlanViewModel : ObservableObject
                 {
                     ErrorText = $"{built.Error!.SafeMessage} ({built.Error.Code})";
                     StatusText = "Could not build that Plan.";
+                    _diagnostics.OperationFailed("plan", built.Error);
                     return;
                 }
 
                 var plan = built.Value;
+                _diagnostics.PlanGenerated(plan, Stopwatch.GetElapsedTime(startedGenerating));
                 Plan = plan;
                 Rows.Clear();
                 foreach (var row in plan.Rows) Rows.Add(row);
@@ -465,6 +495,7 @@ public sealed partial class PlanViewModel : ObservableObject
                 {
                     ErrorText = $"{fresh.Error!.SafeMessage} ({fresh.Error.Code})";
                     StatusText = "Could not verify the board before applying.";
+                    _diagnostics.OperationFailed("apply", fresh.Error);
                     return;
                 }
 
@@ -475,6 +506,7 @@ public sealed partial class PlanViewModel : ObservableObject
                 // is the honest record of what happened, and the one a user comes
                 // to the History view looking for.
                 var startedAt = DateTimeOffset.UtcNow;
+                var startedApplying = Stopwatch.GetTimestamp();
                 if (_recorder is { } recorder)
                 {
                     await recorder.BeginAsync(
@@ -493,6 +525,10 @@ public sealed partial class PlanViewModel : ObservableObject
                 var ui = new Progress<ApplyOutcome>(Outcomes.Add);
                 var progress = new RecordingProgress(ui, _recorder, cancellationToken);
 
+                // Before the first round trip, so a process that dies mid-Apply
+                // still leaves the record that a write was in flight.
+                _diagnostics.ApplyStarted(plan);
+
                 var report = await ApplyExecutor.ApplyAsync(
                     gateway, workspace.Config, plan,
                     currentBacklog, fresh.Value.Fingerprint,
@@ -502,6 +538,7 @@ public sealed partial class PlanViewModel : ObservableObject
                 {
                     ErrorText = $"{report.Error!.SafeMessage} ({report.Error.Code})";
                     StatusText = "Apply refused.";
+                    _diagnostics.OperationFailed("apply", report.Error);
 
                     // Refused before the first write, so there is no run to close.
                     // Abandoning leaves the opened row unfinished rather than
@@ -519,6 +556,9 @@ public sealed partial class PlanViewModel : ObservableObject
                     await closing.CompleteAsync(
                         report.Value.Summary, DateTimeOffset.UtcNow, cancellationToken);
                 }
+
+                _diagnostics.ApplyFinished(
+                    plan, report.Value, Stopwatch.GetElapsedTime(startedApplying));
 
                 StatusText = report.Value.Summary;
 
