@@ -1,5 +1,4 @@
 using AdoBoardSync.Core.Backlog;
-using AdoBoardSync.Core.Board;
 using AdoBoardSync.Core.Agents;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Diagnostics;
@@ -50,9 +49,10 @@ public static class AppServices
         // always bound and PatResolver simply omits it from the source list.
         services.AddSingleton(_ => OsCredentialStore.ForThisPlatform());
 
-        // A factory rather than the gateway itself: the connector is built around a
-        // resolved PAT, and the PAT is resolved per action and never cached.
-        services.AddSingleton<IBoardGatewayFactory, AzureDevOpsGatewayFactory>();
+        // No gateway registration: the connector is built around a resolved PAT, and
+        // the PAT is resolved per action and never cached, so a gateway cannot be a
+        // singleton. Its consumers take a Func<string, IBoardGateway> instead — the
+        // seam the view-model tests already inject.
 
         // One SQLite file, registered under both ports it implements (ABSD-501,
         // ABSD-706). Registered as the concrete type first and forwarded, so both
