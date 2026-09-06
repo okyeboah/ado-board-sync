@@ -3,12 +3,13 @@
 Azure DevOps stores ``System.Description`` as HTML, so backlog Markdown is
 converted on the way in; ``norm``/``plain`` reverse it for stable comparisons.
 """
+import html
 import re
 from html.parser import HTMLParser
 
 
 def escape_html(text):
-    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    return html.escape(text, quote=False)
 
 
 SENTINEL = "\x00%d\x00"
@@ -165,7 +166,7 @@ def markdown_to_html(lines):
 
 def inline(t):
     """Minimal inline markdown -> HTML used for Task descriptions."""
-    t = t.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+    t = escape_html(t)
     t, spans = _protect_code(t)
     t = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", t)
     return _restore_code(t, spans)
