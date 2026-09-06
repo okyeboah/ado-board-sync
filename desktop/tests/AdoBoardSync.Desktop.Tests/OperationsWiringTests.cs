@@ -139,14 +139,14 @@ public class OperationsWiringTests
         // against an AppServices that registers nothing at all.
         using (var real = AppServices.Build())
         {
-            Assert.NotNull(real.GetService<Func<string, IBoardGateway>>());
+            Assert.NotNull(real.GetService<BoardGatewayFactory>());
         }
 
         using var provider = new ServiceCollection()
             .AddCore()
             .AddInfrastructure()
             .AddViewModels()
-            .AddSingleton<Func<string, IBoardGateway>>(_ => _ => board)
+            .AddSingleton<BoardGatewayFactory>(_ => _ => board)
             .BuildServiceProvider();
 
         using var profile = TempBoardProfile.Create(RepoPaths.Fixture("backlog", "standard.md"));
@@ -167,15 +167,61 @@ public class OperationsWiringTests
         // The fallback must not work. A default that constructs a real
         // AzureDevOpsGateway hides a missing registration until it is a live call
         // to somebody's board — which one acceptance test was making every run.
-        var standalone = new PlanViewModel();
+        // Both surfaces, not just the Plan gate: the Audit view holds its own copy
+        // of this fallback, and a test that reflected over PlanViewModel alone
+        // would let the Audit one regress in silence.
+        foreach (var viewModel in new object[] { new PlanViewModel(), new AuditViewModel() })
+        {
+            var factory = viewModel.GetType()
+                .GetField("_gatewayFactory", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(viewModel) as BoardGatewayFactory;
 
-        var factory = typeof(PlanViewModel)
-            .GetField("_gatewayFactory", BindingFlags.Instance | BindingFlags.NonPublic)!
-            .GetValue(standalone) as Func<string, IBoardGateway>;
+            Assert.NotNull(factory);
+            Assert.IsType<UnconfiguredBoardGateway>(factory!("any-token"));
+        }
+    }
 
-        Assert.NotNull(factory);
-        var refused = Assert.Throws<InvalidOperationException>(() => factory!("any-token"));
-        Assert.Contains("AppServices", refused.Message, StringComparison.Ordinal);
+    [Fact]
+    public async Task AnUnconfiguredBoardRefusesWithATypedErrorRatherThanAnException()
+    {
+        // ARCHITECTURE.md §3.7 keeps exceptions out of expected outcomes, and a
+        // missing registration is one. The refusal has to arrive through the same
+        // IsFailure branch every other board failure takes, or each caller needs a
+        // try/catch that the two config-table views no longer have.
+        var read = await new UnconfiguredBoardGateway("nothing was supplied")
+            .ReadAsync(InMemoryConfig.Create());
+
+        Assert.True(read.IsFailure);
+        Assert.Equal("board.unconfigured", read.Error!.Code);
+    }
+
+    [Fact]
+    public void TheConfigTablesReloadThroughTheContainersProfileLoaderNotOneTheyBuild()
+    {
+        // Both tables reload the profile after writing board.config.json. Their
+        // reload parameter is optional, so an unregistered factory means each one
+        // silently builds `new ProfileLoader(new FileSystemBacklogFileStore())` —
+        // a second loader and a second adapter, inside a view model, and wired to
+        // NullDiagnostics while the registered loader emits ABSD-507 events.
+        using var provider = AppServices.Build();
+
+        foreach (var table in new object[]
+                 {
+                     provider.GetRequiredService<SprintPlanningViewModel>(),
+                     provider.GetRequiredService<AssigneePlanningViewModel>(),
+                 })
+        {
+            // BaseType: _reload is private on PlanningTableViewModel<TRow>, and
+            // GetField on the derived type does not see a base class's privates.
+            var reload = (Delegate)table.GetType().BaseType!
+                .GetField("_reload", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .GetValue(table)!;
+
+            Assert.False(
+                reload.Method.Name.Contains("DefaultReload", StringComparison.Ordinal),
+                $"{table.GetType().Name} fell back to its own ProfileLoader; the container "
+                + "registered none, so the composition root is being bypassed.");
+        }
     }
 
     [Fact]
@@ -187,18 +233,17 @@ public class OperationsWiringTests
         // an intention, and the two differ exactly when the record matters.
         var recorded = new InMemoryDiagnostics();
 
-        // A copy, not the fixture. TempBoardProfile points board_file at the path it
-        // is given rather than copying it, so a test that saves through it writes
-        // into the repository's own tracked fixture — which this one did, twice,
-        // before the diff caught it.
-        var scratch = Directory.CreateTempSubdirectory("absd-filewritten-").FullName;
-        var backlog = Path.Combine(scratch, "backlog.md");
-        File.Copy(RepoPaths.Fixture("backlog", "standard.md"), backlog);
+        // No disk. ProfileLoader reads and writes everything through
+        // IBacklogFileStore, so the in-memory store exercises the same path — and
+        // an earlier version of this test used a real temp directory, leaked it,
+        // and before that wrote into the repository's own tracked fixture, because
+        // TempBoardProfile points board_file at the path it is handed rather than
+        // copying it.
+        var store = new InMemoryBacklogFileStore()
+            .With(InMemoryConfig.DefaultBacklogPath, "## Epic one\n\n### PROJ-1 · An issue\n");
+        var loader = new ProfileLoader(store, recorded);
 
-        using var profile = TempBoardProfile.Create(backlog);
-        var loader = new ProfileLoader(new AdoBoardSync.Infrastructure.FileSystemBacklogFileStore(), recorded);
-
-        var opened = await loader.LoadAsync(profile.ConfigPath);
+        var opened = await loader.FromConfigAsync(InMemoryConfig.Create(), configPath: null);
         Assert.True(opened.IsSuccess, opened.Error?.SafeMessage);
 
         var saved = await loader.SaveAsync(opened.Value, opened.Value.Markdown + "\n");
