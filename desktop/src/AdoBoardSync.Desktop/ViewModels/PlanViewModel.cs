@@ -46,7 +46,7 @@ public sealed record PlanCommandOption(
 /// </summary>
 public sealed partial class PlanViewModel : ObservableObject
 {
-    private readonly Func<string, IBoardGateway> _gatewayFactory;
+    private readonly BoardGatewayFactory _gatewayFactory;
 
     /// <summary>
     ///     The operating system's credential store, when this machine has one. It is
@@ -162,7 +162,7 @@ public sealed partial class PlanViewModel : ObservableObject
     private readonly IDiagnostics _diagnostics;
 
     public PlanViewModel(
-        Func<string, IBoardGateway>? gatewayFactory = null,
+        BoardGatewayFactory? gatewayFactory = null,
         ICredentialStore? credentialStore = null,
         ApplyHistoryRecorder? recorder = null,
         DiagnosticRedaction? redaction = null,
@@ -171,7 +171,8 @@ public sealed partial class PlanViewModel : ObservableObject
         // Not `pat => new AzureDevOpsGateway(pat)`. The composition root registers
         // the delegate and injects it here; a default that builds a real connector
         // hides a missing registration behind a live call to somebody's board.
-        _gatewayFactory = gatewayFactory ?? NoGatewayConfigured;
+        _gatewayFactory = gatewayFactory
+            ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
         // Not OsCredentialStore.ForThisPlatform(). The composition root registers
         // the platform's store and injects it here; this fallback is for a view
         // model built outside the container, and it must be the *empty* store
@@ -191,15 +192,6 @@ public sealed partial class PlanViewModel : ObservableObject
         Notes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNotes));
     }
 
-    /// <summary>
-    ///     The factory a view model gets when nobody supplied one. It refuses rather
-    ///     than building a real connector, and is unreachable through the container,
-    ///     which binds the delegate.
-    /// </summary>
-    private static IBoardGateway NoGatewayConfigured(string personalAccessToken) =>
-        throw new InvalidOperationException(
-            "No board gateway factory was supplied to this PlanViewModel. Resolve it from "
-            + "AppServices rather than constructing the view model directly.");
 
     public ObservableCollection<PlanRow> Rows { get; } = [];
 

@@ -54,7 +54,7 @@ public sealed class SprintPlanningViewModel : PlanningTableViewModel<SprintRowVi
     public SprintPlanningViewModel(
         Func<string, IReadOnlyList<IterationConfig>, Result<bool>>? write = null,
         Func<string, Task<Result<BacklogWorkspace>>>? reload = null)
-        : base(reload ?? DefaultReload)
+        : base(reload)
     {
         _write = write ?? BoardConfigWriter.WriteIterations;
     }
@@ -69,7 +69,6 @@ public sealed class SprintPlanningViewModel : PlanningTableViewModel<SprintRowVi
     protected override IEnumerable<SprintRowViewModel> RowsFrom(BacklogWorkspace workspace) =>
         workspace.Config.Iterations.Select(iteration => new SprintRowViewModel(iteration));
 
-    protected override SprintRowViewModel NewRow() => new();
 
     protected override Result<bool> Write(string path) =>
         _write(path, [.. Sprints.Select(sprint => sprint.ToConfig())]);
@@ -77,17 +76,10 @@ public sealed class SprintPlanningViewModel : PlanningTableViewModel<SprintRowVi
     protected override string LoadedStatus(int rowCount, int codeCount) =>
         $"{rowCount} sprint(s) · {codeCount} issue(s) scheduled";
 
-    protected override string UnknownCodesNote(IReadOnlyList<string> codes) =>
-        $"Scheduled but not in the backlog: {string.Join(", ", codes)}.";
-
-    protected override string UncoveredCodesNote(IReadOnlyList<string> codes) =>
-        $"In the backlog with no sprint: {string.Join(", ", codes)}.";
-
     // The Plan gives a repeated code to the earliest sprint that lists it. Saying
     // so here is cheaper than a user discovering it from a Plan.
-    protected override string DuplicatedCodesNote(IReadOnlyList<string> codes) =>
-        $"In more than one sprint, and the first listed wins: {string.Join(", ", codes)}.";
-
-    private static Task<Result<BacklogWorkspace>> DefaultReload(string path) =>
-        new ProfileLoader(new FileSystemBacklogFileStore()).LoadAsync(path);
+    protected override CoverageWording Wording { get; } = new(
+        "Scheduled but not in the backlog",
+        "In the backlog with no sprint",
+        "In more than one sprint, and the first listed wins");
 }

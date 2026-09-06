@@ -53,10 +53,10 @@ public static class AppServices
         // A factory rather than the gateway itself: the connector is built around a
         // resolved PAT, and the PAT is resolved per action and never cached.
         //
-        // The delegate, not a factory interface over it. IBoardGatewayFactory was
+        // A named delegate, not a factory interface over it. IBoardGatewayFactory was
         // registered here and resolved by nobody, because both consumers took a
-        // Func and defaulted to building their own gateway.
-        services.AddSingleton<Func<string, IBoardGateway>>(_ => pat => new AzureDevOpsGateway(pat));
+        // delegate and defaulted to building their own gateway.
+        services.AddSingleton<BoardGatewayFactory>(_ => pat => new AzureDevOpsGateway(pat));
 
         // One SQLite file, registered under both ports it implements (ABSD-501,
         // ABSD-706). Registered as the concrete type first and forwarded, so both
@@ -97,8 +97,17 @@ public static class AppServices
         services.AddTransient<MainWindowViewModel>();
         services.AddTransient<HistoryViewModel>();
         services.AddTransient<AuditViewModel>();
-        services.AddTransient<SprintPlanningViewModel>();
-        services.AddTransient<AssigneePlanningViewModel>();
+        // Both tables reload the profile after they write to board.config.json, and
+        // they must do it through the container's ProfileLoader. Their reload
+        // parameter is optional, so without these two lines the container passes
+        // null and each table builds `new ProfileLoader(new
+        // FileSystemBacklogFileStore())` — a second loader and a second adapter,
+        // constructed inside a view model, and one wired to NullDiagnostics while
+        // the registered loader emits ABSD-507 file-write events.
+        services.AddTransient(s => new SprintPlanningViewModel(
+            reload: path => s.GetRequiredService<ProfileLoader>().LoadAsync(path)));
+        services.AddTransient(s => new AssigneePlanningViewModel(
+            reload: path => s.GetRequiredService<ProfileLoader>().LoadAsync(path)));
         services.AddTransient<ApplyHistoryRecorder>();
         services.AddTransient<AgentAuthoringViewModel>();
 

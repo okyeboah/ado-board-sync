@@ -40,7 +40,7 @@ public sealed class AssigneePlanningViewModel : PlanningTableViewModel<AssigneeR
     public AssigneePlanningViewModel(
         Func<string, IReadOnlyDictionary<string, IReadOnlyList<string>>, Result<bool>>? write = null,
         Func<string, Task<Result<BacklogWorkspace>>>? reload = null)
-        : base(reload ?? DefaultReload)
+        : base(reload)
     {
         _write = write ?? BoardConfigWriter.WriteAssignees;
     }
@@ -57,7 +57,6 @@ public sealed class AssigneePlanningViewModel : PlanningTableViewModel<AssigneeR
             .OrderBy(assignee => assignee.Key, StringComparer.Ordinal)
             .Select(assignee => new AssigneeRowViewModel(assignee.Key, assignee.Value));
 
-    protected override AssigneeRowViewModel NewRow() => new();
 
     protected override Result<bool> Write(string path) =>
         _write(path, Owners.ToDictionary(
@@ -84,17 +83,10 @@ public sealed class AssigneePlanningViewModel : PlanningTableViewModel<AssigneeR
     protected override string LoadedStatus(int rowCount, int codeCount) =>
         $"{rowCount} owner(s) · {codeCount} issue(s) owned";
 
-    protected override string UnknownCodesNote(IReadOnlyList<string> codes) =>
-        $"Owned but not in the backlog: {string.Join(", ", codes)}.";
-
-    protected override string UncoveredCodesNote(IReadOnlyList<string> codes) =>
-        $"In the backlog with no owner: {string.Join(", ", codes)}.";
-
     // The Plan gives a shared code to the first listed owner, mirroring the sprint
     // table's rule. Saying it here beats discovering it from a Plan.
-    protected override string DuplicatedCodesNote(IReadOnlyList<string> codes) =>
-        $"Owned by more than one person, and the first listed wins: {string.Join(", ", codes)}.";
-
-    private static Task<Result<BacklogWorkspace>> DefaultReload(string path) =>
-        new ProfileLoader(new FileSystemBacklogFileStore()).LoadAsync(path);
+    protected override CoverageWording Wording { get; } = new(
+        "Owned but not in the backlog",
+        "In the backlog with no owner",
+        "Owned by more than one person, and the first listed wins");
 }

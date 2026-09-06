@@ -24,7 +24,7 @@ namespace AdoBoardSync.Desktop.ViewModels;
 /// </summary>
 public sealed partial class AuditViewModel : ObservableObject
 {
-    private readonly Func<string, IBoardGateway> _gatewayFactory;
+    private readonly BoardGatewayFactory _gatewayFactory;
     private readonly ICredentialStore _credentialStore;
 
     [ObservableProperty]
@@ -48,12 +48,13 @@ public sealed partial class AuditViewModel : ObservableObject
     [ObservableProperty] private string _credentialStatus = string.Empty;
 
     public AuditViewModel(
-        Func<string, IBoardGateway>? gatewayFactory = null,
+        BoardGatewayFactory? gatewayFactory = null,
         ICredentialStore? credentialStore = null)
     {
         // Refuses rather than building a real connector — see PlanViewModel. The
         // container binds the delegate; a view model built outside it has no board.
-        _gatewayFactory = gatewayFactory ?? NoGatewayConfigured;
+        _gatewayFactory = gatewayFactory
+            ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
         // The empty store, not the platform's — see PlanViewModel. The composition
         // root injects the real one; a view model built outside it must not reach
         // into the user's keychain on its own (ABSD-106).
@@ -61,12 +62,6 @@ public sealed partial class AuditViewModel : ObservableObject
             ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
     }
 
-    /// <summary>See <see cref="PlanViewModel" />: a default that silently reaches a
-    /// live board is not a seam.</summary>
-    private static IBoardGateway NoGatewayConfigured(string personalAccessToken) =>
-        throw new InvalidOperationException(
-            "No board gateway factory was supplied to this AuditViewModel. Resolve it from "
-            + "AppServices rather than constructing the view model directly.");
 
     /// <summary>Every difference, in the order the report produced them.</summary>
     public ObservableCollection<AuditFinding> Findings { get; } = [];
