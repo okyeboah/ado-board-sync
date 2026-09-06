@@ -32,23 +32,13 @@ public partial class SprintsView : UserControl
         }
     }
 
+    // No try/catch: SaveAsync reports its own failures rather than throwing, so an
+    // async void handler here has nothing left to let escape.
     private async void OnSave(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { } model)
-        {
-            return;
-        }
-
-        try
+        if (Model is { } model)
         {
             await model.Sprints.SaveAsync();
-        }
-        catch (Exception ex)
-        {
-            // An async void handler that let this escape would take the process
-            // down. The surface reports it instead, the way every other failure
-            // on it is reported.
-            model.Sprints.ErrorText = $"The sprints were not saved: {ex.Message} (config.unsaved)";
         }
     }
 }

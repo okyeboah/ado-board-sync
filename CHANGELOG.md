@@ -71,6 +71,12 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
   ambiguous and it became unsyncable.
 - `resync-tasks` scoped to one code now queries only that Issue instead of reading
   every Issue on the board to look one up.
+- The desktop's sprint and assignee tables share one implementation. They were the
+  same file twice — identical dirty tracking, row subscription, clear, save
+  sequencing and coverage reporting — differing only in their nouns. The mechanism
+  moves to a generic base; the assignee table's refusal to save two rows for one
+  identity becomes a named hook. A row's codes are now parsed once rather than
+  three times per row per keystroke.
 
 ### Fixed
 
@@ -85,6 +91,27 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
 - Running the desktop test suite wrote into the developer's own profile registry
   and operation history, because the three local-data paths each resolved the OS
   data directory for themselves with no way to redirect them.
+- The desktop application's board connector never came from its composition root.
+  `IBoardGatewayFactory` and its adapter were registered and resolved by nobody;
+  the Plan gate and the Audit view each constructed an `AzureDevOpsGateway`
+  themselves. Port and adapter removed, the container binds the delegate both
+  callers already took, and a view model built outside it now refuses to reach a
+  board rather than building a real connector — the same fix as the credential
+  store before it.
+- One acceptance test called `dev.azure.com` on every run. It set a session token
+  and generated a Plan with no gateway supplied, passing only because the network
+  failure landed in `ErrorText`, which it never asserted on.
+- ABSD-507's diagnostics were declared and never emitted. The one class that
+  logged anything built its events by hand and put backlog item titles — the
+  user's prose — into the file users are asked to attach to support
+  conversations. The Plan gate and the profile loader now emit the declared
+  events, which name failed rows by issue code only.
+
+### Removed
+
+- `CompositeDiagnostics`: its only caller was its own test, and the application
+  registers a single sink. `InMemoryDiagnostics` moved from the shipped
+  Infrastructure assembly into the test kit.
 
 - The CLI's `audit` sorted every non-Epic work item into its Issue bucket, so on boards where Task titles cite issue codes — which is common — each citation became a phantom duplicate finding and a phantom description drift against the cited Issue, failing audits that were healthy. Audit now sorts strictly on Epic and Story types; found by, and re-validated live against, the desktop's plan-parity check.
 - The `max_retries` default is documented as `3`, which is what the code has

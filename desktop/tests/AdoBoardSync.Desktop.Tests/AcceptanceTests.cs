@@ -486,15 +486,21 @@ public class AcceptanceTests
                 config["code_prefix"] = "OTHER";
             });
 
-        var shell = Shell.WithSurfaces(ShellSurfaces.StandAlone());
+        // A fake board, not the stand-alone surfaces: with no gateway supplied this
+        // test built a real AzureDevOpsGateway and called dev.azure.com on every
+        // run, passing because the failure landed in ErrorText, which it never
+        // asserted on. The subject here is profile isolation, not board reading.
+        var board = new FakeBoardGateway();
+        var shell = Shell.WithSurfaces(new ShellSurfaces(
+            Gate(board), new AuditViewModel(), new SprintPlanningViewModel(), new AssigneePlanningViewModel()));
 
         await shell.LoadAsync(first.ConfigPath);
         var firstTitles = shell.Nodes.Select(node => node.Item.Title).ToList();
         Assert.NotEmpty(firstTitles);
 
         // A Plan and a token belonging to the first profile.
-        shell.BoardPlan.SessionToken = "first-profile-token";
         await shell.BoardPlan.GenerateAsync(shell.Workspace!);
+        Assert.True(shell.BoardPlan.HasPlan, shell.BoardPlan.ErrorText);
 
         await shell.LoadAsync(second.ConfigPath);
 

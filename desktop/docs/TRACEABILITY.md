@@ -72,8 +72,8 @@ not ready to start (CONVENTIONS rule 7).
 | NFR-3 plan generation within CLI dry-run bounds | ABSD-302 | `tests/test_performance.py` pins the CLI's request counts; no desktop-side bound test | Open |
 | NFR-4 the PAT never reaches logs/exports/history/backlog | ABSD-103, ABSD-501 | `PatResolverTests.DescribeSourcesLeaksNoToken`; no store exists yet to leak from | Partial — re-audit when the history store lands |
 | NFR-5 CLI retry/backoff semantics in Apply | ABSD-301 | `LiveBoardTests` + `test_client.py` pin the CLI; the gateway ports the contract, create never retried | Partial — write path not yet run against a live board |
-| NFR-6 structured audit events for Plan/Apply | ABSD-507 | — | Open |
-| NFR-7 atomic writes to backlog and config | ABSD-206 | `MainWindowViewModelTests` save tests write through `SaveMarkdown` (temp + rename); the config write-back (ABSD-401/402) is not built yet | Partial |
+| NFR-6 structured audit events for Plan/Apply | ABSD-507 | `OperationsWiringTests.ThePlanGateEmitsThePlanAndApplyEventsArchitectureSectionSevenAsksFor` and `.SavingTheBacklogRecordsThatAFileReachedDisk` — the gate emits `PlanGenerated`/`ApplyStarted`/`ApplyFinished`/`OperationFailed`, `ProfileLoader` emits `FileWritten`, and the same test asserts no event carries an item's title | Covered |
+| NFR-7 atomic writes to backlog and config | ABSD-206, ABSD-401, ABSD-402 | Backlog: `FileSystemBacklogFileStore.WriteAtomic` writes a temp file in the destination directory, flushes it to the device, then renames; `BacklogFileStoreTests.AnAbortBetweenTheTemporaryWriteAndTheRenameLeavesTheOriginalIntact`. Config: `BoardConfigWriter` does the same temp-then-rename and validates against the schema before the rename, under 13 `BoardConfigWriterTests` including `NoTemporaryFileIsLeftBesideTheConfig` and `AConfigThatIsNotJsonIsReportedRatherThanOverwritten`. **Remaining:** the config writer does not `Flush(flushToDisk: true)` before its rename, so it is atomic against a crash but not durable against power loss, where the backlog is both | Partial |
 | NFR-8 stale-plan refusal; save refuses external change | ABSD-303, ABSD-504 | AC-13 and AC-15 rows | Covered |
 | DS §6.1 keyboard-reachable editor and plan flow | ABSD-109 | `Ctrl+S` bound in XAML; no traversal test | Partial |
 | DS §6.3/6.6 no colour-alone states | ABSD-109 | Unsaved chips and plan badges carry glyph + word by construction (`BacklogNodeViewModelTests` pins the summaries); no automated accessibility audit | Partial |
@@ -88,6 +88,9 @@ not ready to start (CONVENTIONS rule 7).
 | Partial | 3 |
 | Open | 0 |
 | Enabling gates met | 3 of 4 |
+
+NFR-6 moved Open → Covered on 2026-09-06. Its events had been declared and never
+emitted, so the missing gate and a missing feature looked identical here.
 
 No criterion is Open. Eight moved to Covered in one pass, because ABSD-503's
 acceptance suite was built to close exactly this table: one test per criterion,

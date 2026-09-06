@@ -19,6 +19,8 @@ public partial class AssigneesView : UserControl
 
     private void OnAdd(object? sender, RoutedEventArgs e) => Model?.Assignees.Add();
 
+    /// <summary>See <see cref="SprintsView" />: the row is the button's own
+    /// DataContext, because the table has no selected row.</summary>
     private void OnRemove(object? sender, RoutedEventArgs e)
     {
         if (sender is Control { DataContext: AssigneeRowViewModel row })
@@ -29,18 +31,9 @@ public partial class AssigneesView : UserControl
 
     private async void OnSave(object? sender, RoutedEventArgs e)
     {
-        if (Model is not { } model)
-        {
-            return;
-        }
-
-        try
+        if (Model is { } model)
         {
             await model.Assignees.SaveAsync();
-        }
-        catch (Exception ex)
-        {
-            model.Assignees.ErrorText = $"The assignees were not saved: {ex.Message} (config.unsaved)";
         }
     }
 }

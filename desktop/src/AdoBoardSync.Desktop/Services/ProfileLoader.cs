@@ -1,6 +1,8 @@
+using System.Text;
 using AdoBoardSync.Core.Backlog;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Csv;
+using AdoBoardSync.Core.Diagnostics;
 using AdoBoardSync.Core.Markdown;
 using AdoBoardSync.Core.Results;
 
@@ -15,9 +17,17 @@ namespace AdoBoardSync.Desktop.Services;
 ///     await. The asynchrony is this caller's, which is why it lives here and not in
 ///     <c>BacklogParser</c>.
 /// </summary>
-public sealed class ProfileLoader(IBacklogFileStore store)
+public sealed class ProfileLoader(IBacklogFileStore store, IDiagnostics? diagnostics = null)
 {
     private readonly IBacklogFileStore _store = store;
+
+    /// <summary>
+    ///     The "a file reached disk" half of ABSD-507. It belongs here rather than in
+    ///     the shell because this is the class that actually writes: a save reported
+    ///     from a view model would be reporting an intention, and the two differ
+    ///     precisely when the report matters.
+    /// </summary>
+    private readonly IDiagnostics _diagnostics = diagnostics ?? NullDiagnostics.Instance;
 
     /// <summary>Opens a profile from a <c>board.config.json</c> on disk.</summary>
     public async Task<Result<BacklogWorkspace>> LoadAsync(
@@ -104,6 +114,13 @@ public sealed class ProfileLoader(IBacklogFileStore store)
 
         var stored = written.Value;
 
+        // The payload, counted as UTF-8. The store decides on a byte-order mark of
+        // its own, so this is the text that was written rather than the file's exact
+        // length on disk — near enough to answer "did the save land, and how big",
+        // and not a number anything computes against.
+        _diagnostics.FileWritten(
+            IBacklogFileStore.BacklogScope, workspace.BacklogPath, Encoding.UTF8.GetByteCount(stored.Text));
+
         // Re-parsed from what was written, never from the buffer: PRD principle 1
         // forbids a shadow copy that can drift from the file the next parse reads.
         var items = BacklogParser.Parse(workspace.Config, stored.Text);
@@ -168,6 +185,8 @@ public sealed class ProfileLoader(IBacklogFileStore store)
         {
             return written.Error!;
         }
+
+        _diagnostics.FileWritten("csv", destinationPath, Encoding.UTF8.GetByteCount(text));
 
         // ImportCsv emits exactly one record per parsed item, so the count is the
         // item count — re-scanning the serialized text to rediscover it would be a

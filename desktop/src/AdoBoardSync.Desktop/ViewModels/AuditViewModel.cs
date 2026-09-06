@@ -51,13 +51,22 @@ public sealed partial class AuditViewModel : ObservableObject
         Func<string, IBoardGateway>? gatewayFactory = null,
         ICredentialStore? credentialStore = null)
     {
-        _gatewayFactory = gatewayFactory ?? (pat => new AzureDevOpsGateway(pat));
+        // Refuses rather than building a real connector — see PlanViewModel. The
+        // container binds the delegate; a view model built outside it has no board.
+        _gatewayFactory = gatewayFactory ?? NoGatewayConfigured;
         // The empty store, not the platform's — see PlanViewModel. The composition
         // root injects the real one; a view model built outside it must not reach
         // into the user's keychain on its own (ABSD-106).
         _credentialStore = credentialStore
             ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
     }
+
+    /// <summary>See <see cref="PlanViewModel" />: a default that silently reaches a
+    /// live board is not a seam.</summary>
+    private static IBoardGateway NoGatewayConfigured(string personalAccessToken) =>
+        throw new InvalidOperationException(
+            "No board gateway factory was supplied to this AuditViewModel. Resolve it from "
+            + "AppServices rather than constructing the view model directly.");
 
     /// <summary>Every difference, in the order the report produced them.</summary>
     public ObservableCollection<AuditFinding> Findings { get; } = [];
