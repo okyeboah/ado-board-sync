@@ -236,7 +236,9 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
             Level = DiagnosticLevel.Debug,
             Category = "apply",
             Code = "apply.no_open_run",
-            Message = $"Outcome not recorded, no run is open: {outcome.Row.Title}",
+            // The code, not the title: a title is the user's own prose, and this
+            // file is the one users are asked to attach to a support conversation.
+            Message = $"Outcome not recorded, no run is open: {outcome.Row.Code}",
         });
 
     private void Report(string code, string message) =>
