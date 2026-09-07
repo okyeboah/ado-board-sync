@@ -321,7 +321,15 @@ def _issue_map(cfg, client, extra_field=None, code=None):
         m = cfg.issue_code_re.search(w["fields"]["System.Title"])
         if m:
             found = m.group(1).upper()
-            out[found] = (w["id"], w["fields"].get(extra_field)) if extra_field else w["id"]
+            # Lowest id wins on a duplicated code. ``dedup`` keeps min(ids), so the
+            # lowest is the item that survives a clean-up; assigning the other one
+            # writes to a work item that is about to be deleted. Compared explicitly
+            # rather than by overwriting: the WIQL orders by nothing, so the previous
+            # last-write-wins took whichever id the server happened to return last.
+            prior = out.get(found)
+            prior_id = (prior[0] if extra_field else prior) if prior is not None else None
+            if prior_id is None or w["id"] < prior_id:
+                out[found] = (w["id"], w["fields"].get(extra_field)) if extra_field else w["id"]
     return out
 
 
@@ -908,7 +916,11 @@ def assign(cfg, client, args):
     for w in client.get_items(ids, ["System.Id", "System.Title", "System.AssignedTo"]):
         m = cfg.issue_code_re.search(w["fields"].get("System.Title", ""))
         if m:
-            code_item[m.group(1).upper()] = (w["id"], w["fields"].get("System.AssignedTo"))
+            # Lowest id wins -- see _issue_map. Same rule, second map.
+            found = m.group(1).upper()
+            prior = code_item.get(found)
+            if prior is None or w["id"] < prior[0]:
+                code_item[found] = (w["id"], w["fields"].get("System.AssignedTo"))
 
     board_codes = set(code_item)
     unknown = sorted(set(owner) - board_codes)     # configured, not on the board

@@ -74,7 +74,7 @@ public sealed class PlanParityTests : IDisposable
 
     /// <summary>
     /// A clean board: one Epic, both Issues, both Tasks, nothing duplicated.
-    /// Deliberately clean — see <see cref="TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks" />
+    /// Deliberately clean — see <see cref="TheTwoImplementationsPickTheSameDuplicateForAssign" />
     /// for the one state where the two implementations differ, and why the fixtures
     /// avoid it.
     /// </summary>
@@ -407,17 +407,19 @@ public sealed class PlanParityTests : IDisposable
     }
 
     [Fact]
-    public async Task TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks()
+    public async Task TheTwoImplementationsPickTheSameDuplicateForAssign()
     {
-        // A real, deliberate divergence, pinned so it cannot change unnoticed.
+        // Was a pinned divergence until 2026-09-06: the CLI overwrote its code->item
+        // map as it walked ids, so a duplicated code left the HIGHEST id owning the
+        // code and that is the item it assigned, while this port took the LOWEST.
         //
-        // The CLI builds its code->item map by overwriting as it walks ids in
-        // ascending order, so a duplicated code leaves the HIGHEST id owning the
-        // code and that is the item it assigns. This port takes the LOWEST, which
-        // is what dedup keeps and what every other command here treats as the real
-        // item. Neither is wrong on a board `audit` passes — a duplicated code is
-        // drift audit already fails on, and dedup removes the copy this port
-        // ignores. The parity fixtures above are all clean boards for that reason.
+        // The lowest is correct, and `dedup` is what decides it: it keeps min(ids),
+        // so assigning the highest writes an owner onto the work item dedup is about
+        // to delete. The CLI now compares ids explicitly instead of relying on the
+        // order the server returns them in.
+        //
+        // Only reachable on a board `audit` already fails, which is why every other
+        // fixture above is a clean board.
         var seed = new List<BoardWorkItem>(MatchingBoard())
         {
             new() { Id = 9, WorkItemType = "Issue", Title = "PROJ-101 · First issue (copy)", ParentId = 1, State = "New" },
@@ -429,8 +431,15 @@ public sealed class PlanParityTests : IDisposable
             seed,
             "--no-tasks");
 
-        Assert.NotEqual(cli, port);
-        Assert.Contains(cli, line => line.StartsWith("#9 ", StringComparison.Ordinal) && line.Contains("assigned=ada@example.com"));
-        Assert.Contains(port, line => line.StartsWith("#2 ", StringComparison.Ordinal) && line.Contains("assigned=ada@example.com"));
+        Assert.Equal(cli, port);
+
+        // Asserted on the id as well as on equality: both sides agreeing on #9 would
+        // also satisfy Assert.Equal, and #9 is the copy dedup deletes. Matched on
+        // the owner rather than on the id alone — #9 still appears as a board row, which
+        // is what it should do, and Describe prints "assigned=" on every row whether or
+        // not anyone is assigned, so matching that substring matches the format and not
+        // the behaviour. What must not happen is ada landing on the copy.
+        Assert.Contains(cli, line => line.StartsWith("#2 ", StringComparison.Ordinal) && line.Contains("assigned=ada@example.com"));
+        Assert.DoesNotContain(cli, line => line.StartsWith("#9 ", StringComparison.Ordinal) && line.Contains("assigned=ada@example.com"));
     }
 }
