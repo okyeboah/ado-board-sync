@@ -199,7 +199,7 @@ Apply requires a Plan ID from a Plan generated against the currently open backlo
 ## 7. Open decisions
 
 1. ~~Should the desktop app be able to create a new Board profile from scratch?~~ **Resolved 2026-09-01:** yes — the form composes a profile and can scaffold a starter backlog (PRD-AC-20).
-2. Should `dedup`'s Plan let the user choose which duplicate survives, or always keep the CLI's existing "first wins" rule?
-3. How should the preview pane represent `stop_headings` content — hidden, or shown but visually marked as excluded from parsing?
-4. Should Operation history sync across machines for the same Board profile, or stay strictly local per install?
+2. Should `dedup`'s Plan let the user choose which duplicate survives, or always keep the CLI's existing "first wins" rule? Not labelled on any issue: it attaches only to Epic ABSD-300, and "first wins" is `min(ids)`, which every command on both sides now agrees on as of 2026-09-07 — so the default is strong and nothing is blocked waiting for it.
+3. How should the preview pane represent `stop_headings` content — hidden, or shown but visually marked as excluded from parsing? **Blocks ABSD-203 (#11)**, labelled `status:decision-needed`. `StopHeadings` reaches only `BacklogParser`, which stops parsing at one; no view layer does anything with the content below it, so this is undecided and unbuilt rather than merely undocumented.
+4. Should Operation history sync across machines for the same Board profile, or stay strictly local per install? **Blocks ABSD-508 (#43)**, labelled `status:decision-needed`. Note what is and is not open: ABSD-508's own acceptance criteria commit to history being scoped and filtered per Board profile, and that part is settled. What is open is whether the store is ever replicated between installs — which changes the storage design but not the per-profile scoping already specified.
 5. Should the editor grow structural editing (adding/renaming Issues in the buffer), or stay description-block-only with headings edited in the file? §3.2.10 states the v1 answer; revisit for R4.
