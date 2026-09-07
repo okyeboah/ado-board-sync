@@ -14,8 +14,8 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 3 | 7 | 11 |
-| **Closed** | | | | | 54 |
+| **Open** | 0 | 1 | 2 | 7 | 10 |
+| **Closed** | | | | | 55 |
 
 Total tracked: **65**.
 
@@ -39,14 +39,7 @@ or declared, then called by nothing.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (3)
-
-#### `markup-gate-unreachable-from-the-editor` — PRD-AC-03's Apply block cannot be triggered by anything a user can type
-
-- **Category:** requirement
-- **Evidence:** `RequestApply` refuses when `workspace.MarkupProblemCount > 0`, and `BacklogMarkupAudit.ProblemsFor` audits the *generated* HTML. `MarkdownHtml.Format` calls `EscapeHtml` first, so `<b>` typed into a description reaches the board as `&lt;b&gt;` and the balance check always passes. `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` asserts the count is 0 for a description containing an unclosed tag, and has to build a workspace by hand to exercise the gate. The CLI's `check-html` has the same property.
-- **Remedy:** Decide what AC-03 is for. Either the criterion describes a guard on the converter (in which case say so, and the current tests are right), or descriptions are meant to allow raw HTML through (in which case escaping is the bug and the gate becomes reachable).
-
+### Medium (2)
 
 #### `decision-needed-label-unused` — status:decision-needed exists but is on zero issues, while decisions remain open
 
@@ -110,6 +103,7 @@ or declared, then called by nothing.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `markup-gate-unreachable-from-the-editor` — PRD-AC-03's Apply block could not be triggered by anything a user can type | medium | 2026-09-07: decided rather than coded around. Both implementations escape raw angle brackets unconditionally (`MarkdownHtml.Format`, `htmlfmt._fmt`), so the criterion guards the converter's **output**; letting raw HTML through would break CLI parity and put unescaped markup on a real board. PRD-AC-03 now says so, `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` states why it builds its workspace by hand, and TRACEABILITY moves AC-03 Partial → Covered. No behaviour changed. |
 | `profile-loader-constructed-outside-the-composition-root` — Both config tables built their own loader, so ABSD-507 file-write events were never emitted from the running app | medium | 2026-09-06: the same shape as the two rows below it, missed by the change that closed them. `SprintPlanningViewModel` and `AssigneePlanningViewModel` took an optional `reload` and defaulted to `new ProfileLoader(new FileSystemBacklogFileStore())` — a second loader wired to `NullDiagnostics`, while the registered one emits `FileWritten`. `AppServices` now supplies `reload` to both. Found by a `/simplify` pass, not by the audit that closed the gateway row, because the fallback worked. `OperationsWiringTests` proves each table reloads through the container's loader; checked by mutation — dropping the registration reports the bypass by name. |
 | `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations wrote to different work items | medium | 2026-09-06: the CLI kept the highest id because both of its code->item maps overwrote as they walked, and the WIQL orders by nothing. `dedup` keeps `min(ids)`, so the highest is the copy it deletes — the CLI now compares ids explicitly in `_issue_map` and in `assign`. `PlanParityTests.TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks` became `...PickTheSameDuplicateForAssign`; verified by reverting the map and watching it fail. |
 | `board-gateway-constructed-outside-the-composition-root` — The connector was built by its callers rather than resolved | high | 2026-09-06: `IBoardGatewayFactory` and `AzureDevOpsGatewayFactory` were registered in `AppServices` and resolved by nobody; `PlanViewModel` and `AuditViewModel` each defaulted to `pat => new AzureDevOpsGateway(pat)`. Port and adapter deleted, the container binds the `Func<string, IBoardGateway>` both callers already took, and the fallback throws instead of building a real connector. `CompositionRootTests`' sweep could not catch it: it matches `I…Store\|Reader\|Writer\|Source`, and proves a port is bound, never that anything resolves it. `OperationsWiringTests` now proves a Plan generated through the container reaches the registered board; checked by mutation. |
