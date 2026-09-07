@@ -14,8 +14,8 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 2 | 7 | 10 |
-| **Closed** | | | | | 55 |
+| **Open** | 0 | 1 | 1 | 7 | 9 |
+| **Closed** | | | | | 56 |
 
 Total tracked: **65**.
 
@@ -39,20 +39,13 @@ or declared, then called by nothing.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (2)
+### Medium (1)
 
 #### `decision-needed-label-unused` — status:decision-needed exists but is on zero issues, while decisions remain open
 
 - **Category:** board
 - **Evidence:** `gh issue list --repo okyeboah/ado-board-sync --label status:decision-needed --json number --jq 'length'` → 0. GITHUB-PROJECT.md:46 defines the label. PRD rev 2 resolved the scaffold decision and recorded storage/registry defaults, so fewer decisions block; the label still sits on no issue.
 - **Remedy:** Audit the remaining PRD/FSD open decisions against the open issues and apply the label where one genuinely blocks.
-
-
-#### `project-requirement-field-empty` — The Requirement Project field is empty on all 26 items although 17 issue bodies name a PRD-AC
-
-- **Category:** board
-- **Evidence:** GITHUB-PROJECT.md's Requirement field spec says the value comes 'From the PRD's acceptance criteria table, if referenced.' `gh project item-list 2 --owner okyeboah --format json` returns no `requirement` key on any of the 26 items. Issue bodies do carry it: #8→PRD-AC-10, #9→01, #10→02, #11→03, #12→16, #14→04, #15→13, #16→06, #17→11, #18→12, #19→09, #20→08, #21→14, #22→01, #23→15, #25→17. (AC-18/19/20 now also exist and name ABSD-203/206/112.)
-- **Remedy:** Populate the Requirement field on those items from the issue bodies. (Priority being unset is per spec — GITHUB-PROJECT.md says 'Unset until product owner prioritizes'.)
 
 
 ### Low (7)
@@ -103,6 +96,7 @@ or declared, then called by nothing.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `project-requirement-field-empty` — The Requirement Project field was empty on every item although issue bodies name PRD-ACs | medium | 2026-09-07: populated on the 24 items whose bodies name one, via `updateProjectV2ItemFieldValue` (an item value — **not** `updateProjectV2Field`, which rewrites a field definition and reissues option ids). Read back: Requirement 24/50, Epic 50/50 and Delivery state 50/50 unchanged. The row's own figures were stale — 50 items and 24 referencing bodies, not 26 and 17. 5 items name several ACs and carry all of them comma-separated, a convention now in GITHUB-PROJECT.md. The 26 items with no PRD-AC in the body are correctly empty. |
 | `markup-gate-unreachable-from-the-editor` — PRD-AC-03's Apply block could not be triggered by anything a user can type | medium | 2026-09-07: decided rather than coded around. Both implementations escape raw angle brackets unconditionally (`MarkdownHtml.Format`, `htmlfmt._fmt`), so the criterion guards the converter's **output**; letting raw HTML through would break CLI parity and put unescaped markup on a real board. PRD-AC-03 now says so, `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` states why it builds its workspace by hand, and TRACEABILITY moves AC-03 Partial → Covered. No behaviour changed. |
 | `profile-loader-constructed-outside-the-composition-root` — Both config tables built their own loader, so ABSD-507 file-write events were never emitted from the running app | medium | 2026-09-06: the same shape as the two rows below it, missed by the change that closed them. `SprintPlanningViewModel` and `AssigneePlanningViewModel` took an optional `reload` and defaulted to `new ProfileLoader(new FileSystemBacklogFileStore())` — a second loader wired to `NullDiagnostics`, while the registered one emits `FileWritten`. `AppServices` now supplies `reload` to both. Found by a `/simplify` pass, not by the audit that closed the gateway row, because the fallback worked. `OperationsWiringTests` proves each table reloads through the container's loader; checked by mutation — dropping the registration reports the bypass by name. |
 | `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations wrote to different work items | medium | 2026-09-06: the CLI kept the highest id because both of its code->item maps overwrote as they walked, and the WIQL orders by nothing. `dedup` keeps `min(ids)`, so the highest is the copy it deletes — the CLI now compares ids explicitly in `_issue_map` and in `assign`. `PlanParityTests.TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks` became `...PickTheSameDuplicateForAssign`; verified by reverting the map and watching it fail. |

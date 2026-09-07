@@ -26,7 +26,7 @@ sequence records how it was built.
 | Epic | Single select | Foundation, Backlog Engine, Plan & Apply, Lifecycle Ops, Operations, Distribution, Agent Assist | From ticket prefix. |
 | Priority | Single select | Must, Should, Could | Unset until product owner prioritizes. |
 | Dependency state | Single select | None, Waiting, Satisfied | Waiting when a listed dependency is not Done. |
-| Requirement | Text | PRD-AC identifier | From the PRD's acceptance criteria table, if referenced. |
+| Requirement | Text | One or more PRD-AC identifiers, comma-separated | From the PRD's acceptance criteria table, if referenced. An issue may name several; the field holds all of them rather than a primary one, because nothing parses it and dropping the rest would lose the only record that the link exists. Empty is correct for an item whose body names none. |
 
 ## Labels
 
