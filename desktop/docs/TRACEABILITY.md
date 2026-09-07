@@ -20,7 +20,7 @@ must reach **Covered** before the release slice that contains it can close.
 | --- | --- | --- | --- | --- |
 | PRD-AC-01 parse tree matches `gen-csv` | §3.2 | ABSD-201 | `BacklogParserParityTests.Parse_MatchesThePythonImplementation`, `.TasksByCode_MatchesThePythonImplementation` | Covered |
 | PRD-AC-02 preview HTML matches the CLI | §3.2 | ABSD-202, ABSD-205 | `MarkdownHtmlParityTests.ToHtml_MatchesThePythonImplementation` over every fixture directory; `PreviewDocumentTests.ThePreviewLosesNoTextFromTheGeneratedMarkup`; `HtmlLayoutTests.FormattingChangesNothingButWhitespace`; for an edited buffer, `BacklogNodeViewModelTests.EditingTheSourceRecomputesEveryDerivedView` pins the HTML to the same converter | Covered |
-| PRD-AC-03 malformed markup blocks Apply | §3.2 | ABSD-203, ABSD-305 | `HtmlBalanceTests.*`, `MarkdownHtmlParityTests.Problems_MatchThePythonImplementation`, `PlanViewModelTests.AConfirmationIsNeverOfferedWhileBacklogMarkupIsMalformed`, `.TheApplyPathRefusesAgainEvenIfAConfirmationWasObtained`, `.ResolvingTheMarkupUnblocksApply`; the buffer's problems recompute live through the same `BacklogMarkupAudit` (`BacklogNodeViewModelTests`); `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` checks the rule itself against the CLI's and drives the gate from a workspace built by hand | Partial — and now understood rather than merely observed. No authored input can reach the gate: the converter escapes raw angle brackets, so `<b>` in a description becomes text and the balance check always passes. The audit is a guard on the converter, not on what a user can type. Tracked as `markup-gate-unreachable-from-the-editor` in GAPS, because it is a question about what the criterion means and not a missing test |
+| PRD-AC-03 malformed markup blocks Apply | §3.2 | ABSD-203, ABSD-305 | `HtmlBalanceTests.*`, `MarkdownHtmlParityTests.Problems_MatchThePythonImplementation`, `PlanViewModelTests.AConfirmationIsNeverOfferedWhileBacklogMarkupIsMalformed`, `.TheApplyPathRefusesAgainEvenIfAConfirmationWasObtained`, `.ResolvingTheMarkupUnblocksApply`; the buffer's problems recompute live through the same `BacklogMarkupAudit` (`BacklogNodeViewModelTests`); `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` checks the rule itself against the CLI's and drives the gate from a workspace built by hand | Covered — the question the row used to carry is answered in the PRD as of 2026-09-07. No authored input can reach the gate, because both implementations escape raw angle brackets unconditionally; the criterion guards the converter's output, and these tests are the right tests for that. The acceptance test builds its workspace by hand for the same reason, which is now stated in the test rather than left to look like a workaround |
 | PRD-AC-04 plan counts shown before any write | §3.3 | ABSD-302, ABSD-305 | `PlanViewModelTests.TheConfirmationRestatesWhatWouldBeCreated`, `.TheConfirmationRestatesWhatWouldBeUpdated`, `.TheConfirmationAgreesInNumber` | Covered |
 | PRD-AC-05 no mutation before Apply | §3.3.5 | ABSD-302, ABSD-303, ABSD-305 | `PlanViewModelTests.GeneratingAPlanWritesNothing`, `.AskingToApplyWritesNothingUntilItIsConfirmed`, `.ApplyingWithoutConfirmingWritesNothing`, `.CancellingClosesTheConfirmationAndWritesNothing` — each asserting the fake board recorded no create and no update | Covered |
 | PRD-AC-06 audit reports hierarchy drift | §3.5 | ABSD-304 | `AcceptanceTests.AuditNamesTheDoneParentAndItsOpenDescendant` — the Done parent is named by board id and the open descendant is carried on the finding, so close-children can plan exactly it; `PlanBuilderAuditTests` (12) cover the report itself, including the cycle-safe ancestor walk; `AuditViewModelTests` (12) pin that the surface authorises nothing | Covered |
@@ -103,12 +103,15 @@ tagged with its id, and a guard that fails when the PRD gains a criterion no
 test names. That guard was verified by adding a PRD-AC-21 row and watching it
 fail — an unfalsifiable coverage check would have been worse than none.
 
-The three that remain Partial are honest about *why*, and none of them is
+AC-03 moved Partial → Covered on 2026-09-07. It was never waiting on a test: it
+was waiting on a decision about what the criterion meant, now recorded in the PRD.
+The converter escapes raw angle brackets on both sides, so the audit guards the
+converter's output rather than the user's input, and the existing tests are the
+right ones for that reading.
+
+The two that remain Partial are honest about *why*, and neither is
 waiting on a test that could simply be written:
 
-- **AC-03** cannot be reached from the editor at all — the converter escapes raw
-  angle brackets, so no authored description produces unbalanced HTML. What the
-  criterion is for is a question for the PRD, tracked in GAPS.
 - **AC-15** has its save-side guard: a save refuses to overwrite an external
   change and the buffer survives. The proactive watcher that marks a profile
   stale *before* a save is attempted does not exist (ABSD-504).
