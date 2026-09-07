@@ -232,4 +232,28 @@ public class BoardConfigWriterTests : IDisposable
 
         Assert.Empty(Directory.GetFiles(_directory, "*.tmp-*"));
     }
+
+    /// <summary>
+    /// The durable write (NFR-7) replaced <c>File.WriteAllText</c>, which offers no
+    /// way to flush to the device, with an explicit encode-and-stream. Encoding is
+    /// the part that changed hands, so this is the part worth guarding: non-ASCII
+    /// must survive the round trip byte for byte.
+    /// </summary>
+    [Fact]
+    public void AnAccentedIdentityRoundTripsThroughTheDurableWrite()
+    {
+        var path = WriteConfig(Minimal);
+
+        BoardConfigWriter.WriteAssignees(
+            path,
+            new Dictionary<string, IReadOnlyList<string>>(StringComparer.Ordinal)
+            {
+                ["Zoë Küçük"] = ["PROJ-1"],
+            });
+
+        // Asserted with the file's own text in the message: a mangled identity is
+        // the diagnosis, and "sub-string not found" on its own is not.
+        var saved = File.ReadAllText(path);
+        Assert.True(saved.Contains("Zoë Küçük", StringComparison.Ordinal), saved);
+    }
 }

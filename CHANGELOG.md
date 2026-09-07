@@ -107,6 +107,18 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
   conversations. The Plan gate and the profile loader now emit the declared
   events, which name failed rows by issue code only.
 
+- The Sprints and Assignees tables reloaded through a profile loader they built
+  themselves, so saving from either emitted none of the file-write diagnostics
+  above: the loader they constructed was wired to a null sink, while the
+  registered one logs. The container now supplies the reload to both. This is
+  the same defect as the board connector and the credential store, in the third
+  place it occurred.
+
+- `board.config.json` was written atomically but not durably: the rename could
+  reach the disk before the bytes it pointed at, so a power cut during a save
+  could leave the config truncated. It now flushes to the device before the
+  rename, as the backlog store already did (FSD NFR-7).
+
 ### Removed
 
 - `CompositeDiagnostics`: its only caller was its own test, and the application

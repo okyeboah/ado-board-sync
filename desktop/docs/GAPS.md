@@ -15,11 +15,11 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
 | **Open** | 0 | 1 | 3 | 7 | 11 |
-| **Closed** | | | | | 53 |
+| **Closed** | | | | | 54 |
 
-Total tracked: **64**.
+Total tracked: **65**.
 
-Last reconciled 2026-09-06, against commit `9ac8f24`. The closed count is a
+Last reconciled 2026-09-06, against commit `8bd65e5`. The closed count is a
 recount of the rows themselves: an earlier revision's totals line said 39 while
 its table held 40. Both columns above are counted from the rows below, not
 carried forward.
@@ -110,6 +110,7 @@ or declared, then called by nothing.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `profile-loader-constructed-outside-the-composition-root` — Both config tables built their own loader, so ABSD-507 file-write events were never emitted from the running app | medium | 2026-09-06: the same shape as the two rows below it, missed by the change that closed them. `SprintPlanningViewModel` and `AssigneePlanningViewModel` took an optional `reload` and defaulted to `new ProfileLoader(new FileSystemBacklogFileStore())` — a second loader wired to `NullDiagnostics`, while the registered one emits `FileWritten`. `AppServices` now supplies `reload` to both. Found by a `/simplify` pass, not by the audit that closed the gateway row, because the fallback worked. `OperationsWiringTests` proves each table reloads through the container's loader; checked by mutation — dropping the registration reports the bypass by name. |
 | `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations wrote to different work items | medium | 2026-09-06: the CLI kept the highest id because both of its code->item maps overwrote as they walked, and the WIQL orders by nothing. `dedup` keeps `min(ids)`, so the highest is the copy it deletes — the CLI now compares ids explicitly in `_issue_map` and in `assign`. `PlanParityTests.TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks` became `...PickTheSameDuplicateForAssign`; verified by reverting the map and watching it fail. |
 | `board-gateway-constructed-outside-the-composition-root` — The connector was built by its callers rather than resolved | high | 2026-09-06: `IBoardGatewayFactory` and `AzureDevOpsGatewayFactory` were registered in `AppServices` and resolved by nobody; `PlanViewModel` and `AuditViewModel` each defaulted to `pat => new AzureDevOpsGateway(pat)`. Port and adapter deleted, the container binds the `Func<string, IBoardGateway>` both callers already took, and the fallback throws instead of building a real connector. `CompositionRootTests`' sweep could not catch it: it matches `I…Store\|Reader\|Writer\|Source`, and proves a port is bound, never that anything resolves it. `OperationsWiringTests` now proves a Plan generated through the container reaches the registered board; checked by mutation. |
 | `acceptance-test-called-a-real-board-on-every-run` — One test made a live `dev.azure.com` request each run | high | 2026-09-06: surfaced by the row above. `AcceptanceTests.SwitchingProfileMixesNothingFromThePreviousOne` set a token and generated a Plan with no gateway supplied, so it built a real connector; it passed because the network failure landed in `ErrorText`, which it never asserted on. Now uses `FakeBoardGateway` and asserts the Plan generated. |

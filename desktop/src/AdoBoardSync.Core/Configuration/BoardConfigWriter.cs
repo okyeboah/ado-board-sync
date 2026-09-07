@@ -1,3 +1,4 @@
+using System.Text;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -174,7 +175,22 @@ public static class BoardConfigWriter
         var temporary = $"{configPath}.tmp-{Guid.NewGuid():N}";
         try
         {
-            File.WriteAllText(temporary, updated);
+            // Flushed to the device before the rename, as the backlog store does:
+            // without this the rename can be durable while the bytes it points at
+            // are not, which is the torn file NFR-7 exists to prevent. Written
+            // through a stream rather than File.WriteAllText because that overload
+            // offers no way to ask for the flush.
+            // Encoding.UTF8.GetBytes writes exactly what File.WriteAllText did:
+            // GetBytes never emits the preamble, so no BOM appears in a file people
+            // hand-edit and diff.
+            var bytes = Encoding.UTF8.GetBytes(updated);
+            using (var stream = new FileStream(
+                temporary, FileMode.Create, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(bytes, 0, bytes.Length);
+                stream.Flush(flushToDisk: true);
+            }
+
             File.Move(temporary, configPath, overwrite: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
