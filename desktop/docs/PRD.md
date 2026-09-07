@@ -97,7 +97,7 @@ The user picks a command (import, resync, resync-tasks), enters a PAT that stays
 | --- | --- |
 | PRD-AC-01 | Given a valid Board profile, when the user opens it, then the app parses the backlog with the same rules as the CLI and shows the same Epic/Issue/Task tree `gen-csv` would produce. |
 | PRD-AC-02 | Given an edited description, when the user views the preview pane, then it shows the same HTML the CLI's conversion would write to Azure DevOps. |
-| PRD-AC-03 | Given malformed markup, when the user edits the backlog, then the app flags it inline and blocks Apply until it is resolved, matching `check-html`'s pass/fail rule. |
+| PRD-AC-03 | Given the converter emits malformed markup, when a backlog is about to be applied, then the app flags it inline and blocks Apply until it is resolved, matching `check-html`'s pass/fail rule. This guards the converter's **output**, not what a user types: descriptions are Markdown, and both implementations escape raw angle brackets unconditionally (`MarkdownHtml.Format`, `htmlfmt._fmt`), so no authored text can reach the board as live HTML. The criterion is a regression detector for the converter — letting raw HTML through instead would break CLI parity and put unescaped markup on a real board. |
 | PRD-AC-04 | Given a backlog and a board, when the user requests a plan, then the app shows exact create/update/delete/unchanged counts before any write occurs. |
 | PRD-AC-05 | Given a shown plan, when the user has not clicked Apply, then no request that mutates Azure DevOps has been sent. |
 | PRD-AC-06 | Given a Done parent with an open descendant, when the user opens Audit, then the app reports the exact parent and descendant items, matching `audit`. |

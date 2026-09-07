@@ -120,6 +120,13 @@ public class AcceptanceTests
 
     // ---------------------------------------------------------- PRD-AC-03
 
+    /// <summary>
+    /// The workspace is built by hand on purpose, not for want of a shorter route.
+    /// PRD-AC-03 guards the converter's output, and both implementations escape raw
+    /// angle brackets unconditionally, so no authored description can produce
+    /// unbalanced HTML — there is no editor input that reaches this gate. Driving it
+    /// from typed text would prove the escaping, not the gate.
+    /// </summary>
     [Fact]
     [Trait(Criterion, "PRD-AC-03")]
     public async Task MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply()
