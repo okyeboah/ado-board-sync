@@ -14,8 +14,8 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 4 | 7 | 12 |
-| **Closed** | | | | | 52 |
+| **Open** | 0 | 1 | 3 | 7 | 11 |
+| **Closed** | | | | | 53 |
 
 Total tracked: **64**.
 
@@ -39,13 +39,7 @@ or declared, then called by nothing.
 - **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations.
 - **Remedy:** Create the throwaway project, then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal.
 
-### Medium (4)
-
-#### `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations write to different work items
-
-- **Category:** parity
-- **Evidence:** `PlanParityTests.TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks` pins it. `commands.assign` builds `code_item[CODE] = (id, field)` while walking ascending ids, so the last write wins and the **highest** id is assigned; `PlanBuilder.IssuesByCode` keeps the **lowest**. Only reachable on a board that `audit` already fails, and `dedup` keeps the lowest — so the port's answer is the one that survives a clean-up, which is why it was kept.
-- **Remedy:** Decide which is correct and make both agree, or state the divergence in FSD §5 as intended. Leaving it pinned-but-undocumented means the next parity failure here looks like a regression.
+### Medium (3)
 
 #### `markup-gate-unreachable-from-the-editor` — PRD-AC-03's Apply block cannot be triggered by anything a user can type
 
@@ -116,6 +110,7 @@ or declared, then called by nothing.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `assign-picks-a-different-duplicate-than-the-cli` — On a board with a duplicated code, the two implementations wrote to different work items | medium | 2026-09-06: the CLI kept the highest id because both of its code->item maps overwrote as they walked, and the WIQL orders by nothing. `dedup` keeps `min(ids)`, so the highest is the copy it deletes — the CLI now compares ids explicitly in `_issue_map` and in `assign`. `PlanParityTests.TheTwoImplementationsDisagreeOnWhichDuplicateAssignPicks` became `...PickTheSameDuplicateForAssign`; verified by reverting the map and watching it fail. |
 | `board-gateway-constructed-outside-the-composition-root` — The connector was built by its callers rather than resolved | high | 2026-09-06: `IBoardGatewayFactory` and `AzureDevOpsGatewayFactory` were registered in `AppServices` and resolved by nobody; `PlanViewModel` and `AuditViewModel` each defaulted to `pat => new AzureDevOpsGateway(pat)`. Port and adapter deleted, the container binds the `Func<string, IBoardGateway>` both callers already took, and the fallback throws instead of building a real connector. `CompositionRootTests`' sweep could not catch it: it matches `I…Store\|Reader\|Writer\|Source`, and proves a port is bound, never that anything resolves it. `OperationsWiringTests` now proves a Plan generated through the container reaches the registered board; checked by mutation. |
 | `acceptance-test-called-a-real-board-on-every-run` — One test made a live `dev.azure.com` request each run | high | 2026-09-06: surfaced by the row above. `AcceptanceTests.SwitchingProfileMixesNothingFromThePreviousOne` set a token and generated a Plan with no gateway supplied, so it built a real connector; it passed because the network failure landed in `ErrorText`, which it never asserted on. Now uses `FakeBoardGateway` and asserts the Plan generated. |
 | `diagnostics-vocabulary-declared-and-never-called` — ABSD-507's five events had no production caller, and the one class that did log wrote item titles | high | 2026-09-06: `DiagnosticsExtensions` declared the events; `ApplyHistoryRecorder` was the only emitter and built its own, including `["title"] = outcome.Row.Title` — the user's prose, in a file attached to support conversations, against the extensions' own rule of naming failed rows by code. The Plan gate now emits `PlanGenerated`/`ApplyStarted`/`ApplyFinished`/`OperationFailed`; `ProfileLoader` emits `FileWritten`; the recorder reports only history-store failures. STATUS.md's ABSD-507 row asserted these were already written and is corrected in the same change. |
