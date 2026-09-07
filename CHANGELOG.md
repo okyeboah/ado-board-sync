@@ -114,6 +114,11 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
   the same defect as the board connector and the credential store, in the third
   place it occurred.
 
+- `board.config.json` was written atomically but not durably: the rename could
+  reach the disk before the bytes it pointed at, so a power cut during a save
+  could leave the config truncated. It now flushes to the device before the
+  rename, as the backlog store already did (FSD NFR-7).
+
 ### Removed
 
 - `CompositeDiagnostics`: its only caller was its own test, and the application
