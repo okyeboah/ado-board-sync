@@ -14,8 +14,8 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
-| **Open** | 0 | 1 | 0 | 7 | 8 |
-| **Closed** | | | | | 57 |
+| **Open** | 0 | 1 | 0 | 6 | 7 |
+| **Closed** | | | | | 58 |
 
 Total tracked: **65**.
 
@@ -41,13 +41,7 @@ or declared, then called by nothing.
 
 ### Medium (0)
 
-### Low (7)
-
-#### `sync-one-has-no-parity-test` — Eight of the nine planned commands are compared against the Python; `sync-one` is not
-
-- **Category:** test
-- **Evidence:** `BuildSyncOne` has 8 tests in `PlanBuilderLifecycleTests` and zero mentions in `PlanParityTests`, where `assign` has 15 and `resync`, `close-children` and `audit` have 4 each. STATUS.md's ABSD-302 row reads "All nine CLI commands plan … 62 builder tests plus 12 `PlanParityTests`" — true of the totals, not of the ninth command. `plan-covers-two-of-nine-commands` was closed on that same sentence.
-- **Remedy:** Add a `sync-one` scenario to `PlanParityTests`. It is the command most likely to drift unnoticed: it takes a single issue code, so a divergence shows on one item rather than across a whole plan — the same shape the `assign` uniqueName defect had before parity caught it.
+### Low (6)
 
 #### `ac05-ac07-not-on-any-issue` — PRD-AC-05 and PRD-AC-07 are assigned to ABSD-302 in TRACEABILITY but issue #14 names only AC-04
 
@@ -89,6 +83,7 @@ or declared, then called by nothing.
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
+| `sync-one-has-no-parity-test` — Eight of the nine planned commands are compared against the Python; `sync-one` is not | low | 2026-09-11: `PlanParityTests.SyncOneUpdatesTheSameIssueTheCliUpdates` and `.SyncOneCreatesTheSameIssueTheCliCreates` run the real `sync-one` against the CLI's FakeClient and the port's Plan through `FakeBoardGateway`, asserting both the plan equality and the resulting board. The create test earned itself immediately: the two fakes numbered created items differently (the CLI's pre-increments from 1000, the port's post-incremented), so the first created id was 1001 on one side and 1000 on the other. `FakeBoardGateway` now numbers exactly as `tests/fake_client.py` does. |
 | `decision-needed-label-unused` — `status:decision-needed` existed but sat on zero issues while decisions remained open | medium | 2026-09-07: 9 remaining PRD §10 / FSD §7 decisions audited against 27 open issues. Most already carry a v1 answer or were settled implicitly by shipped work. Applied to ABSD-203 (#11) for FSD §7.3 — `StopHeadings` reaches only `BacklogParser` and no view layer handles the content below one, so it is undecided and unbuilt — and to ABSD-508 (#43) for FSD §7.4 at the owner's direction. I had argued against #43 because its acceptance criteria already commit to per-profile scoping; FSD §7.4 now separates that settled part from the open one (whether the store replicates between installs) so the label does not contradict the issue. §7.2 (dedup) deliberately unlabelled: it attaches only to an Epic, and `min(ids)` is now agreed everywhere. Read back: 2 issues carry the label. |
 | `project-requirement-field-empty` — The Requirement Project field was empty on every item although issue bodies name PRD-ACs | medium | 2026-09-07: populated on the 24 items whose bodies name one, via `updateProjectV2ItemFieldValue` (an item value — **not** `updateProjectV2Field`, which rewrites a field definition and reissues option ids). Read back: Requirement 24/50, Epic 50/50 and Delivery state 50/50 unchanged. The row's own figures were stale — 50 items and 24 referencing bodies, not 26 and 17. 5 items name several ACs and carry all of them comma-separated, a convention now in GITHUB-PROJECT.md. The 26 items with no PRD-AC in the body are correctly empty. |
 | `markup-gate-unreachable-from-the-editor` — PRD-AC-03's Apply block could not be triggered by anything a user can type | medium | 2026-09-07: decided rather than coded around. Both implementations escape raw angle brackets unconditionally (`MarkdownHtml.Format`, `htmlfmt._fmt`), so the criterion guards the converter's **output**; letting raw HTML through would break CLI parity and put unescaped markup on a real board. PRD-AC-03 now says so, `AcceptanceTests.MalformedMarkupIsFlaggedByTheSameRuleAsCheckHtmlAndBlocksApply` states why it builds its workspace by hand, and TRACEABILITY moves AC-03 Partial → Covered. No behaviour changed. |
