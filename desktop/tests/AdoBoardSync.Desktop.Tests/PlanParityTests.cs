@@ -406,6 +406,60 @@ public sealed class PlanParityTests : IDisposable
         Assert.True(report.IsClean, string.Join("; ", report.Findings.Select(f => f.Detail)));
     }
 
+    /// <summary>
+    /// `sync-one` was the ninth command and the only one with no parity scenario. It
+    /// is the one most likely to drift unnoticed: it touches a single issue, so a
+    /// divergence shows on one item rather than across a plan — the shape the assign
+    /// defect had before parity caught it.
+    /// </summary>
+    [Fact]
+    public async Task SyncOneUpdatesTheSameIssueTheCliUpdates()
+    {
+        // PROJ-101 has drifted: stale title and description, and no iteration.
+        var seed = CleanBoard(Html("Epic body."), Html("Stale body."), Html("Second body."))
+            .Select(i => i.Id == 2 ? i with { Title = "PROJ-101 · Stale title", IterationPath = "" } : i)
+            .ToList();
+
+        var (cli, port) = await RunBothAsync(
+            "sync-one",
+            (c, items, s, m) => PlanBuilder.BuildSyncOne(c, items, s, m, "PROJ-101", "Sprint 1").Value,
+            seed,
+            "--code", "PROJ-101", "--sprint", "Sprint 1");
+
+        Assert.Equal(cli, port);
+
+        // Asserted on the outcome as well as on equality: both sides leaving the item
+        // untouched would also satisfy Assert.Equal, and that is the failure this
+        // scenario exists to catch.
+        Assert.Contains(cli, line =>
+            line.StartsWith("#2 ", StringComparison.Ordinal)
+            && line.Contains("PROJ-101 · First issue", StringComparison.Ordinal)
+            // project\\sprint, the path the CLI builds at commands.py:71 -- not the bare
+            // sprint name the config lists it under.
+            && line.Contains(@"iteration=widgets\Sprint 1", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task SyncOneCreatesTheSameIssueTheCliCreates()
+    {
+        // PROJ-102 is in the backlog and absent from the board, so this is the create
+        // half of the same command. Tasks and assignees must stay untouched: sync-one
+        // "never changes Tasks or assignees", and only a create path can prove the
+        // port does not fold them in.
+        var seed = CleanBoard(Html("Epic body."), Html("First body."), Html("Second body."))
+            .Where(i => i.Id != 3)
+            .ToList();
+
+        var (cli, port) = await RunBothAsync(
+            "sync-one",
+            (c, items, s, m) => PlanBuilder.BuildSyncOne(c, items, s, m, "PROJ-102", "Sprint 2").Value,
+            seed,
+            "--code", "PROJ-102", "--sprint", "Sprint 2");
+
+        Assert.Equal(cli, port);
+        Assert.Contains(cli, line => line.Contains("PROJ-102 · Second issue", StringComparison.Ordinal));
+    }
+
     [Fact]
     public async Task TheTwoImplementationsPickTheSameDuplicateForAssign()
     {

@@ -14,6 +14,12 @@ namespace AdoBoardSync.Desktop.Tests;
 internal sealed class FakeBoardGateway : IBoardGateway
 {
     private readonly object _gate = new();
+
+    // Numbered exactly as tests/fake_client.py numbers them: the counter starts
+    // at 1000 and increments BEFORE use, so the first create on either side of a
+    // PlanParityTests comparison lands on 1001. The parity comparison is of whole
+    // boards, ids included, so a fake that numbered differently would fail every
+    // test whose command creates something.
     private int _nextId = 1000;
 
     public List<BoardWorkItem> Items { get; } = [];
@@ -92,7 +98,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
                 return Task.FromResult<Result<int>>(error);
             }
 
-            var id = _nextId++;
+            var id = ++_nextId;
             Created.Add((workItemType, title, descriptionHtml, parentId));
             Items.Add(new BoardWorkItem
             {
@@ -242,7 +248,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
     {
         lock (_gate)
         {
-            var id = _nextId++;
+            var id = ++_nextId;
             Items.Add(new BoardWorkItem
             {
                 Id = id,
