@@ -62,3 +62,18 @@ ruvector.db*
 !.agents/skills/**
 uv.lock
 .stele-context/
+
+# agent-brain:repo:start
+
+# The stele-context index is run-local state, never shared.
+.stele-context/
+# The repo-local brain is retired; the brain is user-scope at ~/.agent.
+.agent/
+.DS_Store
+
+# This repository keeps its agent adapter stubs out of git (.claude/settings.json, .mcp.json, AGENTS.md, CLAUDE.md);
+# the rest follow the same convention, because they are the same
+# artifact and a half-committed set matches no harness.
+.codex/
+.zcode/
+# agent-brain:repo:end
