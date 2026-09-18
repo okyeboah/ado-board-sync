@@ -72,7 +72,7 @@ Planned components (specified now so their slices land consistently):
 
 | Component | Purpose | Key states |
 | --- | --- | --- |
-| Inline validation gutter marker | Underline plus gutter glyph at the malformed line/block. | Error (blocks Apply), Warning (advisory only). |
+| Inline validation gutter marker | Superseded by the PRD-AC-03 decision (2026-09-07): the converter escapes raw angle brackets, so no authored input can place a markup problem on a single line and there is no line to mark. Problems are reported per item in the problems card, which is what blocks Apply. | Error state per item; blocks Apply. |
 | Audit finding card | One card per drift item: subject, evidence, kind (BacklogDrift/HierarchyDrift). | Read-only; "Open in Close-children" when applicable. |
 | Sprint/assignee table | Editable table bound to `iterations`/`assignees` config. | Editing, conflict (code in two rows), saved. |
 | Operation history timeline | Reverse-chronological ApplyRuns with per-item outcomes. | Succeeded, Partial, Failed. |
