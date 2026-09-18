@@ -127,13 +127,13 @@ Its primary gate is an automated launch smoke test, because a mistyped `StaticRe
 
 ### ABSD-401 · Implement sprint (iteration) planning view and Plan
 
-**Outcome:** An editable `iterations` table; Plan/Apply for iteration-node creation and Issue/Task assignment, matching `sprints`, `--assign-only`, and `--no-tasks`.
+**Outcome:** An editable `iterations` table, saved back into the profile's own `board.config.json` through the atomic write the config schema requires; Plan/Apply for iteration-node creation and Issue/Task assignment, matching `sprints`, `--assign-only`, and `--no-tasks`.
 
 **Depends on:** ABSD-303.
 
 ### ABSD-402 · Implement assignee planning view and Plan
 
-**Outcome:** An editable `assignees` table; Plan/Apply for `assign`, matching `--no-tasks` and `--only-unassigned`.
+**Outcome:** An editable `assignees` table, saved back into the profile's own `board.config.json` through the same atomic write; Plan/Apply for `assign`, matching `--no-tasks` and `--only-unassigned`.
 
 **Depends on:** ABSD-303.
 

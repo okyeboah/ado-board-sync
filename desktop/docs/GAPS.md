@@ -32,7 +32,6 @@ or declared, then called by nothing.
 
 ### High (1)
 
-
 #### `write-path-never-run-against-a-real-board` — The connector's write path has never been exercised against the live API
 
 - **Category:** test

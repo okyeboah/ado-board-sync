@@ -55,7 +55,7 @@ moved and should be re-derived next: it was 9 of 20 Covered before this audit.
 
 ## 3. Dependency map (remaining work)
 
-```
+```text
 push ──→ first CI run on ubuntu/headless ──→ ABSD-506 closed
 ABSD-103 (test the OS credential store) ────────────→ R1 closed
 ABSD-502 (registry view) ───────────────────────────┘
@@ -135,4 +135,3 @@ for want of credentials.
 
 The split remains the right shape for future work. It is retired here only
 because the history it describes cannot now be written.
-

@@ -10,6 +10,23 @@ permissions:
   contents: read
 
 jobs:
+  docs:
+    name: Docs (markdownlint)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # The delivery documents are a primary deliverable (ABSD-111); the config
+      # at the repo root is the standard they declare, so a gate runs it. The
+      # two fixture directories are excluded inside .markdownlintignore: parser
+      # fixtures are deliberately malformed.
+      - name: Lint the documentation
+        run: npx --yes markdownlint-cli --config .markdownlint.jsonc --ignore .venv --ignore desktop/tests/fixtures --ignore tests/fixtures "**/*.md"
+
   cli:
     name: CLI (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest

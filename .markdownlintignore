@@ -2,5 +2,6 @@
 # trailing whitespace, and headings without surrounding blanks are the inputs
 # under test. Linting them would force the very cases away.
 desktop/tests/fixtures/
+tests/fixtures/
 
 .venv/
