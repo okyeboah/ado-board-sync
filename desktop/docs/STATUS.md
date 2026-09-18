@@ -46,25 +46,21 @@ everything else → Not started.
 
 ## The shape of what remains
 
-Two sentences, because the per-ticket rows below no longer say it plainly:
+Every engine, every view model and every surface is built, tested and committed.
+What is left is proof, polish and one blocked gate:
 
-**The engines are built; one of them has no window.** This audit found five view
-models covered by tests and unreachable from the running application. Four of
-them — `SprintPlanningViewModel`, `AssigneePlanningViewModel`, `HistoryViewModel`
-and `ProfileRegistryViewModel` — got their surfaces while the audit was being
-written, and then got tests: `ShellInteractionTests` opens each pane in a real
-headless window, clicks its buttons and types into its fields. Their rows stay
-Partial because they are uncommitted, not for want of a surface or a test.
+- **The write path has never touched a real board.** The read path is observed
+  live; the JSON-patch shapes, the parent link and the retry rules are ports
+  until the sandbox project exists again (GAPS holds the blocked remedy).
+- **The agent epic is reachable.** `AgentView` is in the nav rail with discovery,
+  run, cancel, the three disclosures, the diff review and the history readback
+  (ABSD-701–706, all Done).
+- **ABSD-111's remainder is the board, not the code** — closing the issues whose
+  row here reads Done.
 
-One remains genuinely unreachable. `ProfileRegistryViewModel` (ABSD-502) now has
-its switcher in the nav rail, but `AgentAuthoringViewModel` has no surface and no
-nav section — the whole ABSD-700 epic is reachable from the test suite and
-nowhere else. Its view model is covered (`AgentAuthoringViewModelTests`, 28,
-including the three disclosure sentences a user reads before handing a local CLI
-a directory), which is what makes the missing surface the only thing left.
-
-That is why eleven tickets read Partial rather than Done. For eight of them the
-remaining work is a view or a test around one; for none of them is it logic.
+The suite stands at **714 .NET tests** (178 Core, 74 parity, 462 desktop, 8
+live-board skipped) and **129 CLI tests**, Release, zero warnings, with a
+markdownlint lane over the delivery documents.
 
 ## Delivery tickets
 
@@ -79,10 +75,10 @@ remaining work is a view or a test around one; for none of them is it logic.
 | ABSD-105 Central build properties and package versions | Done | `Directory.Build.props` sets the shared conventions and `ManagePackageVersionsCentrally`; `Directory.Packages.props` holds every version. No csproj in `src` or `tests` carries a `Version=` attribute any more. `tests/Directory.Build.targets` is imported after each project so it can read that project's own `IsTestProject`, which is what keeps the xunit packages off `AdoBoardSync.TestKit`. |
 | ABSD-106 Infrastructure and gateways | Done | `IBacklogFileStore` in Core, `FileSystemBacklogFileStore` in Infrastructure (strict UTF-8, BOM preserved to match `parser.py`, temp-then-rename with `Flush(flushToDisk: true)`), and `AppServices` as the one composition root. `BacklogFileStoreTests` (10) and `FileStoreParityTests` (3) cover it; `CompositionRootTests` (8) pins that every port resolves. |
 | ABSD-107 Profile loading off the UI thread | Done | `ProfileLoader` — load, reload, save and CSV export are all asynchronous, cancellable, and run the file work off the calling thread. `ProfileLoaderTests` (9) drive the whole path through the in-memory store with no disk. |
-| ABSD-108 Headless UI test harness | Partial | `UiHarness` owns the headless platform for the whole process (two classes bootstrapping their own would fail whichever ran second), finds controls across both the visual and logical trees, answers "is this actually on screen" for the collapsed panes, clicks and types. `ShellInteractionTests` (8) drive the real window. It earned itself twice on its first run: `BindingFailures` caught the shell assigning its DataContext after `InitializeComponent`, so every binding resolved against null once on the way up, and the finders caught two panes offering the same button caption. Verified live by reverting that fix and watching the assertion fail. **Remaining:** it drives controls rather than synthesising input — no pointer or keyboard events — and `Avalonia.Headless.XUnit`'s own attributes are still not in use. |
+| ABSD-108 Headless UI test harness | Partial | `UiHarness` owns the headless platform for the whole process (two classes bootstrapping their own would fail whichever ran second), finds controls across both the visual and logical trees, answers "is this actually on screen" for the collapsed panes, clicks and types. `ShellInteractionTests` (8) drive the real window. It earned itself twice on its first run: `BindingFailures` caught the shell assigning its DataContext after `InitializeComponent`, so every binding resolved against null once on the way up, and the finders caught two panes offering the same button caption. Verified live by reverting that fix and watching the assertion fail. **Remaining:** pointer synthesis, deliberately — raising the routed `Click` event is chosen over hit-tested pointer presses for the flake rationale recorded on `UiHarness.Click`; keyboard events now go through the real headless input pipeline (`AccessibilityTests`, Ctrl+S and Tab) — and `Avalonia.Headless.XUnit`'s attributes stay unadopted, since they would add a package to solve the cross-class dispatch problem the harness's own UI thread closed. |
 | ABSD-109 Design system and shell chrome | Done | Both theme palettes from DESIGN-SYSTEM.md §2, the spacing/type/radius scale, and the nav-rail shell — verified in light and dark. The contrast pass is documented with its measured numbers (DESIGN-SYSTEM §2) and pinned by `AccessibilityTests` over Theme.axaml's own hex values; it found white-on-orange plan labels at 2.03:1, which is why `TextOnPlanBrush` exists. §6 is built where the app restyles templates: focus outlines in the accent, `Ctrl+S` and Tab proven through the real input pipeline, Plan rows announcing operation and code as one phrase. |
-| ABSD-110 Credential status and board-action gating | Done | `PlanViewModel` resolves the token off the UI thread and reports which source answered; board actions are refused with that status as their message when none does. **Caveat, tracked in GAPS:** the view model constructs `OsCredentialStore.ForThisPlatform()` itself rather than resolving the registered port. |
-| ABSD-111 Reconcile the documents and the board | Partial | Delivered this run: STATUS/PROJECT-TRACKING/GAPS reconciled against the committed tree — 16 rows moved to Done, 11 from Not started to Partial, and the view-gap named above stated once where it belongs. Reconciled again against the working tree that followed it: ABSD-108, 401, 402, 502, 503, 508, 703 and 705 restated, TRACEABILITY's eight newly-covered criteria recorded (no criterion is Open now), three gap rows opened, and the stale 554-test figure corrected. Also sized a gap that had been under-reported: eleven of the tickets this file tracks are defined in no BACKLOG.md Outcome, not one. **Remaining:** those eleven Outcomes, the GitHub board itself (28 cards, 16 issues to close) and a pass over the issue bodies. |
+| ABSD-110 Credential status and board-action gating | Done | `PlanViewModel` resolves the token off the UI thread through the composition root's `ICredentialStore` — the caveat this row once carried (the view model building its own `OsCredentialStore`) was closed on 2026-09-05 — and reports which source answered; board actions are refused with that status as their message when none does. |
+| ABSD-111 Reconcile the documents and the board | Partial | Delivered this run: STATUS/PROJECT-TRACKING/GAPS reconciled against the committed tree — 16 rows moved to Done, 11 from Not started to Partial, and the view-gap named above stated once where it belongs. Reconciled again against the working tree that followed it: ABSD-108, 401, 402, 502, 503, 508, 703 and 705 restated, TRACEABILITY's eight newly-covered criteria recorded (no criterion is Open now), three gap rows opened, and the stale 554-test figure corrected. Also sized a gap that had been under-reported: eleven of the tickets this file tracks are defined in no BACKLOG.md Outcome, not one. **Remaining:** the GitHub board itself — closing the issues whose STATUS.md row now reads Done, and a pass over the issue bodies. |
 | ABSD-112 Onboarding without a config file | Done | Two equal routes in; the form composes the same JSON the config file holds. A failed config open is reported inline with a typed code instead of replacing onboarding with an error page, and the form route scaffolds a working starter backlog with the profile's exact prefix when none exists — opt-out, never overwriting an existing file (`OnboardingViewModelTests`, 5). |
 
 ### ABSD-200 · Backlog engine
@@ -117,7 +113,7 @@ Every row here has its engine and its view model, and none has a view. See
 | --- | --- | --- |
 | ABSD-401 Sprint planning view | Done | `BuildSprints` plans iteration creation and assignment; `SprintPlanningViewModel` drives the table (`PlanningTableTests`, 15). `SprintsView.axaml` is in the nav rail and `ShellInteractionTests` adds a row through the button and types into it, so the two-way bindings are proven rather than assumed. `Adopt` fills the table from the open profile and `Clear` empties it when that profile closes. Saving writes the profile's own `board.config.json` through `BoardConfigWriter`'s atomic temp-then-rename, and the shell re-adopts the saved profile. |
 | ABSD-402 Assignee planning view | Done | `BuildAssign` plans assignment with the `assign-only`, `only-unassigned` and `assign-from-parent` options; `AssigneePlanningViewModel` drives the table. Comparison matches the CLI on all three identity facets — uniqueName, id and displayName — which a uniqueName-only comparison got wrong and would have re-planned the same write forever. An item that is already correctly owned is shown as **Unchanged** rather than dropped from the plan (PRD-AC-12). `AssigneesView.axaml` is in the nav rail and driven by `ShellInteractionTests`; the save path is the same atomic config write as ABSD-401's. |
-| ABSD-403 Close-children review | Partial | `BuildCloseChildren` plans the terminal state for every open descendant of a Done item, and the Audit view hands off to it. **Remaining:** the dedicated review surface the ticket names; today the handoff lands in the generic Plan table. |
+| ABSD-403 Close-children review | Done | `BuildCloseChildren` plans the terminal state for every open descendant of a Done item at any depth; `--assign-from-parent` is the Plan surface's checkbox (`SupportsAssignFromParent`), and PRD-AC-09 pins the inheritance rule end to end. The review the ticket names is the Audit view's hierarchy findings — each names its Done parent and open descendants, read-only, with closure reachable only through the Close-children Plan and its confirmation (`TheAuditPaneStillOffersNoWriteOfItsOwn` checks the pane offers no write). |
 
 ### ABSD-500 · Operations and delivery
 
@@ -125,10 +121,10 @@ Every row here has its engine and its view model, and none has a view. See
 | --- | --- | --- |
 | ABSD-501 Operation history store | Done | `SqliteOperationHistory` over one SQLite file, registered under both the ports it implements so a single connection serves history and agent runs. `OperationHistoryTests` (13) and `OperationsWiringTests` (4). |
 | ABSD-502 Multi-profile registry | Done | `ProfileRegistry`, `JsonProfileRegistryStore` and `ProfileRegistryViewModel` (`ProfileRegistryTests`, 18; `ProfileSwitchingTests`, 25). The switcher combo and the Forget control are both in the nav rail — forgetting un-registers without touching the `board.config.json` it pointed at — and `ShellInteractionTests` drives the combo and the Forget button through the real window. `Adopt` registers each profile it opens, and choosing another one opens it. |
-| ABSD-503 End-to-end parity and acceptance suite | Partial | Both halves now exist. Parity: 74 comparisons against the live Python modules, `ParityCoverageTests` guards, `PlanParityTests` (14) comparing the board each implementation leaves behind, and `LiveBoardTests` gated behind `ADO_BOARD_SYNC_LIVE_CONFIG` (writes behind `ADO_BOARD_SYNC_LIVE_WRITE`). Acceptance: `AcceptanceTests` carries one test per PRD criterion, each tagged with its id, and `EveryAcceptanceCriterionInThePrdHasATest` reads `PRD.md` and fails when a criterion has no test or a test claims one that no longer exists — verified by adding a PRD-AC-21 row and watching it fail. **Remaining:** committed; and PRD-AC-17 is asserted about the packaging scripts rather than an installed package, which no in-process test can do. |
+| ABSD-503 End-to-end parity and acceptance suite | Partial | Both halves now exist. Parity: 74 comparisons against the live Python modules, `ParityCoverageTests` guards, `PlanParityTests` (14) comparing the board each implementation leaves behind, and `LiveBoardTests` gated behind `ADO_BOARD_SYNC_LIVE_CONFIG` (writes behind `ADO_BOARD_SYNC_LIVE_WRITE`). Acceptance: `AcceptanceTests` carries one test per PRD criterion, each tagged with its id, and `EveryAcceptanceCriterionInThePrdHasATest` reads `PRD.md` and fails when a criterion has no test or a test claims one that no longer exists — verified by adding a PRD-AC-21 row and watching it fail. **Remaining:** PRD-AC-17 is asserted about the packaging scripts rather than an installed package, which no in-process test can do — the criterion was checked once by hand, running the published binary under `env -i` with no toolchain. |
 | ABSD-504 External change detection | Done | Both halves. Save refuses to overwrite an external change and names Reload, keeping the buffer. The proactive half is a poll, not a `FileSystemWatcher`: the shell compares the file's content stamp on a 30-second dispatcher timer and every time the window is activated, marks the profile stale before anything can be planned or applied against it, and a read that failed — a file caught mid-rename, a dropped share — raises nothing. An editor rewriting identical bytes is correctly not a change: the stamp is a content hash. Tested at three levels: the poll's edge cases (`MainWindowViewModelTests`), the refusal-and-reload cycle end to end (`AcceptanceTests`, PRD-AC-15), and the banner itself through the real window (`ShellInteractionTests`). |
 | ABSD-505 Continuous integration | Done | `.github/workflows/build-and-test.yml`; green on `main`. |
-| ABSD-506 Extend CI to the desktop application | Partial | The workflow restores, builds and tests the whole `.slnx` in Release on ubuntu, live tests skipping without the env var. **Remaining:** a packaging lane; and CI has still not run against this code, because the commit has not been pushed. |
+| ABSD-506 Extend CI to the desktop application | Partial | The workflow restores, builds and tests the whole `.slnx` in Release on ubuntu, live tests skipping without the env var, and a packaging lane builds all three platforms on every run — it has been green over this code since `2425e5b`. A docs lane now lints the delivery documents too. **Remaining:** the tri-platform launch proof the Outcome names — a window actually raised on macOS, Windows and Linux, not a package that built. |
 | ABSD-507 Structured diagnostics | Done | `JsonLinesDiagnosticsSink` writes Plan generation, Apply and file writes to a rolling JSONL log, on by default; `DiagnosticRedaction` registers the resolved token so it cannot reach the log. The sink never throws, so an unwritable log directory costs the log and nothing else (`DiagnosticsSinkTests`, 13). **This row was previously false and is corrected here.** It claimed those three events were written when nothing emitted one: `DiagnosticsExtensions` declared all five with no production caller, and `ApplyHistoryRecorder` built its own by hand, putting item titles in the log. The Plan gate now emits `PlanGenerated`, `ApplyStarted`, `ApplyFinished` and `OperationFailed`; `ProfileLoader` emits `FileWritten` for the backlog save and the CSV export. `OperationsWiringTests` proves each reaches a sink and that no event carries a title (NFR-6, Covered). |
 | ABSD-508 Operation history timeline | Done | `HistoryViewModel` reads the store and scopes every row to the active profile's key (`HistoryTimelineTests`, 23). `HistoryView.axaml` is in the nav rail and `ShellInteractionTests` opens it and now renders a recorded run through the real view, expanding its per-item outcomes. The Outcome's filters are built: by command and by time span, over the loaded page (`TheCommandFilterNarrowsTheTimelineAndAllCommandsRestoresIt`, `.TheSpanFilterHidesRunsOlderThanItsLength`). The timeline is also fed: `Adopt` loads it, and the recorder actually receives every row — Apply reported outcomes through a `Progress<T>`, which posts to the dispatcher and returned *after* the run was closed, so the store refused them and the per-item outcomes were being dropped (`AcceptanceTests`, PRD-AC-08, found it). |
 
@@ -148,7 +144,7 @@ shell has no agent section to put one in.
 | --- | --- | --- |
 | ABSD-701 Agent provider port and discovery | Done | `AgentProvider` and `AgentProviderRegistry` discover installed CLIs; no key is ever held. The Agent pane shows what was discovered in its chooser, with the Look-again control, and `AgentProviderRegistryTests` pin the discovery contract. |
 | ABSD-702 Run an agent CLI as a subprocess | Done | `AgentRunner` spawns the CLI with a scoped environment (`AgentEnvironment`) and captures its output (`AgentRunnerTests`, 5); the PAT never reaches the child. Cancellation from the UI is the pane's Cancel control, visible only while a run is in flight and wired to the view model's cancel (`AgentAuthoringViewModelTests`); output streams into the pane's log. |
-| ABSD-703 Prompt surface scoped to the selection | Partial | `AgentAuthoringViewModel` scopes the prompt to the selected Epic, Issue or the whole backlog, and restates the three disclosure sentences — which binary runs, what it can read, what it may change — as the provider and scope change (`AgentAuthoringViewModelTests`, 28). **Remaining:** the view. |
+| ABSD-703 Prompt surface scoped to the selection | Done | `AgentAuthoringViewModel` scopes the prompt to the selected Epic, Issue or the whole backlog, and restates the three disclosure sentences — which binary runs, what it can read, what it may change — as the provider and scope change (`AgentAuthoringViewModelTests`, 28). The view is `AgentView` in the nav rail: the disclosures read while the user is deciding, not behind a tooltip, and `ShellInteractionTests` drives the pane through the real window — the run button gated on a prompt, the scope following the tree selection. |
 | ABSD-704 Review an agent's backlog edit as a diff | Done | `AgentEditSession` takes a byte snapshot, runs, and offers the result as a reviewable diff through `TextDiff` and `AgentEditReview`; rejection restores the exact bytes via `IAgentEditFileStore`, never a decode/encode round trip (`AgentEditSessionTests`, 14; `TextDiffTests`, 11). The review replaces the prompt pane while a diff is under review — one decision on screen, with the run control withdrawn — and the diff renders line by line, marker first so it reads without colour (DESIGN-SYSTEM §5.3). |
 | ABSD-705 Plan the board consequences of an agent's draft | Done | The draft parses through the same `BacklogParser` and plans through the same `PlanBuilder`, so consequences are computed by the paths that already have parity. The surface's route is the same handoff the Audit view has: Generate-a-Plan appears only after an edit was accepted and opens the Plan surface — it approves nothing (`AgentAuthoringViewModelTests` pins that a Plan before an accept is refused; `ShellInteractionTests.TheAgentPaneOffersNoPathToTheBoardOfItsOwn` checks the pane offers no other path to the board). |
 | ABSD-706 Record every agent run | Done | `IAgentRunHistory` is implemented by the same `SqliteOperationHistory` and shares its connection; the session records every run — including cancelled and refused ones — and the verdict closes the row. The readback the ticket names is the History surface's agent section: provider, version, scope, prompt, status, exit and the accept/reject verdict, scoped to the active profile like every other read (`HistoryTimelineTests`, 23; `ShellInteractionTests` renders a recorded agent run through the real view). |
@@ -179,53 +175,46 @@ written and their state never updated.
 
 ## What this means
 
-**There is a user-runnable application, and it edits, plans and applies.**
-`dotnet run --project src/AdoBoardSync.Desktop` opens a window that loads a Board
-profile — from a `board.config.json`, or from details typed into the app, with a
-starter backlog scaffolded when none exists — and shows each item's source beside
-the exact HTML `import` would send. Typing changes the preview, the task list and
-the markup problems live; Ctrl+S writes the edited blocks back atomically,
-refuses to clobber an external edit, and keeps the selection where it was. The
-import CSV can be written from the same window, byte-identical to `gen-csv`.
+**There is a user-runnable application that edits, plans, applies, audits and
+records.** `dotnet run --project src/AdoBoardSync.Desktop` opens a window that
+loads a Board profile — from a `board.config.json`, from details typed into the
+app, or from the profile switcher — shows each item's source beside the exact
+HTML `import` would send, edits with live preview and live markup problems, saves
+atomically, refuses to clobber an external change, watches the file while the
+window is open, exports the import CSV byte-identical to `gen-csv`, plans all
+nine commands behind the review gate, applies them concurrently with per-item
+outcomes recorded to SQLite, audits drift read-only and hands closure back
+through the gate, plans sprints and assignees into the profile's own config, and
+records and shows every Apply and every agent run scoped to the active profile.
 
 Writes go through the Plan/Apply gate: generating a Plan only reads, and Apply is
 refused unless the user confirms, the backlog and board still match what the Plan
-was computed against, and the editor holds nothing unsaved. All nine CLI commands
-now plan, and the Audit view reports drift read-only.
+was computed against, and the editor holds nothing unsaved against a file that
+has not moved.
 
 Three honest limits. The connector's **write** path has still not run against a
-real board — the one thing CI going green does not tell us. **The OS credential
-store has no test** — it is written, wired and unproven. And the entire agent
-epic has no surface at all: reachable from the test suite and not from the
-application.
-
-Two of those limits closed since the last revision. Sprints, assignees, history
-and the profile switcher are now all in the nav rail and all driven by
-`ShellInteractionTests` through the real window, so the "views no test can open"
-gap is gone. Wiring them found two defects that no view-model test could have:
-the shell was building its own `PlanViewModel`, so the history recorder and the
-diagnostics redactor registered in the composition root never reached Apply; and
-Apply's outcomes were recorded through a `Progress<T>` that delivered after the
-run had been closed, so the store refused them.
+real board — the sandbox project is gone and the account cannot recreate it.
+**AC-17** has never been proven by an installed package on a clean machine —
+once, by hand, a published binary ran under `env -i`. And **signing** waits on a
+credential this repository must never hold.
 
 ## Next tickets
 
-1. **Throwaway-project live writes** — now the largest untested surface in the
-   product, and the one High gap that code alone cannot close.
-2. **Build the ABSD-700 surface** — the agent epic's view model is tested and its
-   engine is proven; only the view is missing, and `UiHarness` is now there to
-   test it the moment it exists.
-3. **View-level tests for the three views that landed before the harness did**
-   (ABSD-401/402/508) — each is built and reachable, and none is opened by a
-   test.
+1. **Recreate the sandbox and run the live writes** — the one High gap, blocked
+   on an org permission; the remedy in GAPS is ready to execute the moment the
+   project exists.
+2. **Close the GitHub issues whose row here reads Done** (ABSD-111's remainder),
+   and give the issue bodies a pass.
+3. **The tri-platform launch proof** (ABSD-506) — a window raised on each OS in
+   CI, not a package that built.
 
 ## Release slices
 
 | Release | State |
 | --- | --- |
-| R1 Desktop foundation | Partial — host, shell, onboarding, file gateway, composition root, central build properties and the OS credential store (now tested, and resolved through the composition root) all done and committed; the profile registry still has no switcher view |
-| R2 Backlog editor | Done — parser, converter, validator, live-preview editing, atomic save and byte-identical CSV export are all committed and tested; the gutter-marker remainder was superseded by the PRD-AC-03 decision (no authored input can produce a per-line markup problem) |
-| R3 Plan and apply | Partial — all nine commands plan, Apply is gated and concurrent, the Audit view is read-only and hands off closure; the write path has never run against a live board |
-| R4 Sprints, assignees and operations | Partial — every engine and view model built and tested, and the sprint, assignee and history views landed mid-audit with their nav sections live; all three are uncommitted and none has a view-level test |
+| R1 Desktop foundation | Done — host, shell, both onboarding routes, credential store tested and resolved through the composition root, file gateway, composition root, central build properties, and the profile registry with its switcher and Forget control |
+| R2 Backlog editor | Done — parser, converter, validator, live-preview editing, atomic save with proactive staleness detection, byte-identical CSV export |
+| R3 Plan and apply | Partial — all nine commands plan, Apply is gated, concurrent and recorded, the Audit view is read-only and hands off closure; the write path has never run against a live board, and the sandbox project is missing |
+| R4 Sprints, assignees and operations | Done — the two tables save into the profile's own config through the atomic write, close-children reviews through Audit and applies through the gate, and the history timeline filters by command and span |
 | R5 Distribution | Partial — self-contained builds and per-user packages for all three platforms, built and checked by CI every run; unsigned, which is the whole of what remains |
-| R6 Agent-assisted authoring | Partial — providers, runner, edit session, diff review and run history built and tested; no agent surface anywhere in the shell |
+| R6 Agent-assisted authoring | Done — providers, runner, edit session, diff review, the nav-rail surface, and every run recorded and readable in the history timeline |

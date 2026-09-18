@@ -20,12 +20,12 @@ checked from `STATUS.md` and `TRACEABILITY.md` alone.
 
 | Milestone | Exit criterion | State |
 | --- | --- | --- |
-| R1 Desktop foundation | A profile opens from a file or from onboarding, parses, renders; config and credential paths validated. | **Partial.** Host, shell, both onboarding routes, scaffold, typed import errors, the file gateway, the composition root and central build properties are all done and committed. Two remainders: the OS credential store is written but untested (ABSD-103), and the profile registry has no view (ABSD-502). |
+| R1 Desktop foundation | A profile opens from a file or from onboarding, parses, renders; config and credential paths validated. | **Done.** Host, shell, onboarding, scaffold, typed import errors, file gateway, composition root, central build properties, the tested OS credential store (resolved through the composition root), and the profile registry with switcher and Forget control. |
 | R2 Backlog editor | Edit with live preview, inline validation, atomic save, CSV export. | **Done.** Editing, live recompute, atomic save with external-change refusal, and byte-identical CSV export are committed and tested. The gutter-marker remainder was superseded by the PRD-AC-03 decision: the converter escapes raw markup, so no authored input can put a problem on one line. |
-| R3 Plan & apply | Import/resync/resync-tasks/dedup/sync planned, reviewed, applied; Audit view matches the CLI. | **Partial.** All nine CLI commands now plan; Apply is gated, concurrent and ordered; the Audit view reports drift read-only and hands closure back through the same gate. Remainder is not features but proof: the write path has never run against a real board. |
-| R4 Sprints, assignees & operations | Sprint/assignee tables with config write-back, close-children review, history store + timeline. | **Partial.** Every engine and view model exists and is tested — `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `SqliteOperationHistory`. The sprint, assignee and history views landed mid-audit and their nav sections are live; all three are uncommitted and none is opened by a test. Config write-back is still unticketed (GAPS `config-writeback-unticketed`). |
+| R3 Plan & apply | Import/resync/resync-tasks/dedup/sync planned, reviewed, applied; Audit view matches the CLI. | **Partial.** All nine commands plan; Apply is gated, concurrent, ordered and recorded; the Audit view hands closure back through the same gate. Remainder is proof, not features: the write path has never run against a real board, and the sandbox project it needs is gone (GAPS holds the blocked remedy). |
+| R4 Sprints, assignees & operations | Sprint/assignee tables with config write-back, close-children review, history store + timeline. | **Done.** The tables save into the profile's own config through the atomic write (ticketed in ABSD-401/402 since 2026-09-11); close-children reviews through Audit's findings and applies through the gate; the timeline renders, filters and shows agent runs too. |
 | R5 Distribution | Signed installable package per OS, installable without a toolchain (PRD-AC-17). | **Partial.** `publish.sh` and `package.sh` produce self-contained, per-user packages for macOS, Windows and Linux, and CI builds and checks all three every run. The packages are unsigned by design — signing needs a credential this repository must never hold — so ABSD-601 stays open on exactly that. |
-| R6 Agent-assisted authoring | Agent CLIs spawn, edit as reviewed diff, plan consequences, runs recorded. | **Partial.** Providers, runner, edit session, diff review and run history are built and tested; the shell has no agent section to reach any of it. |
+| R6 Agent-assisted authoring | Agent CLIs spawn, edit as reviewed diff, plan consequences, runs recorded. | **Done.** The Agent section is in the nav rail: discovery, scoped prompt with the three disclosures, run and cancel, diff review, the Plan handoff, and every run readable in the history timeline. |
 
 ## 2. Burn-down
 
@@ -33,57 +33,43 @@ Counts from `STATUS.md` (44 tickets). The 2026-08-26 column is a recount of
 that revision's own rows — its totals line said 13 Partial / 26 Not started,
 which its rows contradicted (14 / 25); all three columns below sum to 44.
 
-| State | 2026-08-26 (recounted) | 2026-09-01 | 2026-09-05 |
-| --- | --- | --- | --- |
-| Done | 5 | 5 | 23 |
-| Partial | 14 | 20 | 21 |
-| Not started | 25 | 19 | 0 |
+| State | 2026-08-26 (recounted) | 2026-09-01 | 2026-09-05 | 2026-09-11 |
+| --- | --- | --- | --- | --- |
+| Done | 5 | 5 | 23 | 37 |
+| Partial | 14 | 20 | 21 | 7 |
+| Not started | 25 | 19 | 0 | 0 |
 
 The 2026-09-05 jump is one commit and one audit, not a week of delivery. The
-tree was committed (`9f54b70`), which discharged the "uncommitted work is not
-delivered" rule for ten rows whose evidence was already written. A further six
-rows were found recorded as Not started while fully built, and eleven were found
-recorded as Not started while their engines existed and were tested — those
-eleven became Partial, not Done, because none of them has a view.
+2026-09-11 move is the reverse correction: the rows had drifted behind the code
+they describe, and the reconciliation re-read each Outcome against what is
+committed and tested. Seven rows stay Partial, each for a named reason — the
+live write path (blocked on a missing sandbox project), the installed-package
+proof, the tri-platform launch check, signing, pointer synthesis (declined with
+a rationale), and the GitHub board itself.
 
-Read the Done column with that in mind: it counts tickets whose Outcome is
-built and tested, not features a user can reach. The gap between those two
-readings is the eleven Partial rows in R4 and R6.
-
-Acceptance-criteria coverage (`TRACEABILITY.md`) is the number that has not
-moved and should be re-derived next: it was 9 of 20 Covered before this audit.
+Acceptance-criteria coverage is 19 of 20 Covered; AC-17 is the holdout, and it
+waits on an installed package, not on a test that could be written.
 
 ## 3. Dependency map (remaining work)
 
 ```text
-push ──→ first CI run on ubuntu/headless ──→ ABSD-506 closed
-ABSD-103 (test the OS credential store) ────────────→ R1 closed
-ABSD-502 (registry view) ───────────────────────────┘
-
-ABSD-108 (interaction test harness, xunit.v3)
-        ├─→ tests for the three views that already landed:
-        │     ABSD-401 sprints, ABSD-402 assignees, ABSD-508 timeline ─→ R4
-        └─→ the two views still missing:
-              ABSD-502 registry switcher ─→ R1
-              ABSD-701–706 surfaces ─────→ R6
-
-live write tests (throwaway project) ──→ ABSD-301/303 ──→ R3 closed
-R3 + R4 closed ──→ ABSD-503 acceptance half ──→ ABSD-601/602 ──→ R5
+sandbox project recreated ──→ [LiveFact(Writes)] tests ──→ ABSD-301/303 close ──→ R3 closed
+org permission granted ─────┘
+ABSD-506 launch proof (3 OS lanes) ──→ ABSD-506 closed
+signing credentials ────────────────→ ABSD-601 closed ──→ R5 closed
+issue bodies + close 37 Done tickets ──→ ABSD-111 closed
 ```
 
-The critical path to a shippable v1 is now: **push and read CI → ABSD-108's
-harness → the five views → live write proof → ABSD-503 → packaging.** The
-engine work that used to sit on this path is done.
+The engine work that used to sit on this path is done. What remains is proof and
+credentials: everything now blocked on this map is blocked on something outside
+the repository.
 
 ## 4. Risks
 
 | Risk | Likelihood | Impact | Response | Owner |
 | --- | --- | --- | --- | --- |
-| The write path has never touched a real board — patch shapes, parent links and retry rules are ports, not observations (GAPS: `write-path-never-run-against-a-real-board`, the one High) | Certain today | High — first real Apply is the first real test | Throwaway project + the three gated `[LiveFact(Writes = true)]` tests, before any R3 close | next slice |
-| ~~CI has never executed this code~~ — **retired 2026-09-05.** Green at `2425e5b` across all six jobs. It cost three runs: two defects (uncommitted packaging scripts, no `zip` on the Windows runner) were invisible to every local run | — | — | Kept here as evidence for the next lane added without CI behind it | closed |
-| Views are arriving faster than the harness that can test them: three landed mid-audit with no test able to open them, and two more (ABSD-502, ABSD-700) are still to come | Certain | Medium — untouched code paths, and a burn-down that reads healthier than the application feels | ABSD-108's interaction harness, now urgent rather than tidy: it was meant to precede the views and did not | R4 |
-| The OS credential store is written, wired and has no test — the suite only ever substitutes `UnavailableCredentialStore` | Certain | Medium — it is the one component that touches a real secret | Cover the three platform stores behind the process seam; the store is already split so the subprocess can be faked | R1 close |
-| `PlanViewModel` constructs `OsCredentialStore.ForThisPlatform()` itself instead of resolving the registered port, so the composition root is not the only place a port meets its adapter | Certain | Low — works today, but it is the seam ABSD-106 exists to enforce, and the second such bypass will be harder to see | Inject `ICredentialStore`; `AppServices` already registers it and `CompositionRootTests` already resolves it | R1 close |
+| The write path has never touched a real board — patch shapes, parent links and retry rules are ports, not observations (GAPS, the one High) | Certain until the sandbox exists | High — first real Apply is the first real test | The gated `[LiveFact(Writes = true)]` tests are ready; the sandbox project must be recreated, which needs an org permission the token does not hold | org owner |
+| The live documents drift behind the tree — STATUS's rows described the agent epic and four tickets as unbuilt weeks after they landed | Demonstrated twice | Medium — a burn-down that reads healthier or sicker than the application is | Reconcile in the same change that moves a ticket; this file's milestones now re-derive from STATUS's rows | every agent |
 | Perf bounds (FSD NFR-2/3) are untested on the desktop side | Possible | Low — fixture backlogs recompute instantly today | Add a 500-item fixture benchmark when the editor's recompute path stabilises | R3/R4 |
 
 ## 5. Decision log
@@ -105,19 +91,12 @@ engine work that used to sit on this path is done.
 
 ## 6. Suggested next-slice plan
 
-1. **Throwaway-project live writes.** Pushing and going green closed the CI
-   question; this is now the largest untested surface in the product, and the
-   one High gap that no amount of code closes by itself.
-2. **ABSD-108's interaction harness** — the separate xunit.v3 project that
-   `Avalonia.Headless.XUnit` needs. It was meant to come before the views; three
-   have now landed without it, so it is the thing standing between them and a
-   Done row.
-3. **The two views still missing** (ABSD-502's switcher and the ABSD-700
-   surfaces), and tests for the three that just arrived.
-4. **Test the OS credential store** (ABSD-103) and inject it through the
-   composition root — the last R1 remainder, and the only Done-blocker that is
-   not a view.
-5. **Throwaway-project live writes** — retire the one High gap and close R3.
+1. **Recreate the sandbox project** (or grant the account Create-new-projects),
+   then run the three gated live-write tests — R3 closes on it.
+2. **Close the 37 issues whose STATUS.md row reads Done**, and pass over the
+   issue bodies — ABSD-111's remainder.
+3. **The tri-platform launch proof** for ABSD-506.
+4. **Signing** for ABSD-601 when a credential the repository can hold exists.
 
 ## 7. Commit history note
 
