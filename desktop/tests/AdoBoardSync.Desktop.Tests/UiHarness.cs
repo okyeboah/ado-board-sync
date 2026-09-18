@@ -63,8 +63,19 @@ internal static class UiHarness
                 SynchronizationContext.SetSynchronizationContext(new UiThreadContext(queue));
 
                 running.TrySetResult();
-                foreach (var work in queue.GetConsumingEnumerable())
+                while (true)
                 {
+                    // Avalonia's own queue — layout, focus, the input pipeline —
+                    // only moves when RunJobs runs on this thread, so it is
+                    // pumped between every piece of test work and while idle.
+                    // Waiting inside GetConsumingEnumerable instead left those
+                    // jobs stranded while a test body sat suspended at an await.
+                    Dispatcher.UIThread.RunJobs();
+                    if (!queue.TryTake(out var work, 10))
+                    {
+                        continue;
+                    }
+
                     try
                     {
                         work.Body();
