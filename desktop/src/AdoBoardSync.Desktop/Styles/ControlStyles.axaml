@@ -290,7 +290,10 @@
     <Style Selector="Border.badge.create > TextBlock.onAccent,
                      Border.badge.update > TextBlock.onAccent,
                      Border.badge.unchanged > TextBlock.onAccent">
-        <Setter Property="Foreground" Value="{DynamicResource TextOnAccentBrush}" />
+        <!-- The plan fills are mid-brightness: white on them measured 2.0–3.1:1
+             in the contrast pass, below even the 3:1 UI minimum. The dark label
+             measures 5.0–7.7:1. -->
+        <Setter Property="Foreground" Value="{DynamicResource TextOnPlanBrush}" />
     </Style>
 
     <!-- A Delete row carries a heavier border, not just a colour, so it cannot be
@@ -345,6 +348,36 @@
     </Style>
     <Style Selector="GridSplitter:pointerover">
         <Setter Property="Background" Value="{DynamicResource AppAccentSoftBrush}" />
+    </Style>
+
+    <!-- ================================================================ -->
+    <!--  Keyboard focus (DESIGN-SYSTEM §6.2)                              -->
+    <!--  Every interactive control shows where the keyboard is, in the     -->
+    <!--  accent. Fluent's own focus visuals only cover some templates,     -->
+    <!--  so the ones this app restyles carry their own outline here.       -->
+    <!-- ================================================================ -->
+
+    <Style Selector="Button:focus /template/ ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="Button.accent:focus /template/ ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource TextOnAccentBrush}" />
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="ListBox#NavList ListBoxItem:focus /template/ ContentPresenter">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
+    </Style>
+    <Style Selector="TreeView.backlog TreeViewItem:focus /template/ Border#PART_LayoutRoot">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="TextBox.editor.editable:focus /template/ Border#PART_BorderElement">
+        <Setter Property="BorderBrush" Value="{DynamicResource AppAccentBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource RadiusMd}" />
     </Style>
 
     <!-- ================================================================ -->

@@ -36,6 +36,10 @@
             <SolidColorBrush x:Key="TextSecondaryBrush" Color="#5B6472" />
             <SolidColorBrush x:Key="TextMutedBrush" Color="#8B93A1" />
             <SolidColorBrush x:Key="TextOnAccentBrush" Color="#FFFFFF" />
+            <!-- Label colour over the mid-brightness plan fills (create/update/
+                 unchanged), which white text cannot sit on at 3:1. Measured in
+                 the contrast pass: see DESIGN-SYSTEM §2. -->
+            <SolidColorBrush x:Key="TextOnPlanBrush" Color="#1E2430" />
 
             <!-- Plan operations. Colour never carries the meaning alone; each is
                  paired with a glyph and a label at the call site (§2, §5.3). -->
@@ -79,6 +83,7 @@
             <SolidColorBrush x:Key="TextSecondaryBrush" Color="#B4BBC8" />
             <SolidColorBrush x:Key="TextMutedBrush" Color="#7C8494" />
             <SolidColorBrush x:Key="TextOnAccentBrush" Color="#161B26" />
+            <SolidColorBrush x:Key="TextOnPlanBrush" Color="#161B26" />
 
             <!-- Plan operations -->
             <SolidColorBrush x:Key="PlanCreateBrush" Color="#3CCB7E" />

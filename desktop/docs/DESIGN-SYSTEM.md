@@ -14,7 +14,11 @@
 
 ## 2. Color tokens
 
-Defined as `DynamicResource` keys in `Styles/Theme.axaml`, in both a Light and a Dark theme. Body text holds at least 4.5:1 contrast against its background in both themes.
+Defined as `DynamicResource` keys in `Styles/Theme.axaml`, in both a Light and a Dark theme. Body text holds at least 4.5:1 contrast against its background in both themes. The pass is pinned by `AccessibilityTests` over the same hex values, and its numbers:
+
+- Body and secondary text on shell, sidebar and editor: **5.6–15.8:1** across both themes.
+- Labels on the accent (buttons): 4.9:1 light, 7.2:1 dark.
+- Plan badge labels on their fills: 5.0–7.7:1 (create/update/unchanged), light delete 4.1:1 with white — the better of the two candidates, above the 3:1 UI minimum for caption text. The first pass found white-on-orange at **2.03:1**, which is why `TextOnPlanBrush` exists.
 
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
@@ -89,9 +93,9 @@ Planned components (specified now so their slices land consistently):
 
 ## 6. Accessibility
 
-1. Keyboard: the editor and Plan-review flow are reachable without a mouse; `Ctrl+S` saves; standard Avalonia focus traversal covers the rest.
-2. Focus-visible outlines on every interactive control, using AppAccentBrush.
+1. Keyboard: the editor and Plan-review flow are reachable without a mouse; `Ctrl+S` saves — proven through the headless input pipeline by `AccessibilityTests`, along with Tab traversal between surfaces; standard Avalonia focus traversal covers the rest.
+2. Focus-visible outlines on every interactive control, using AppAccentBrush; the templates this app restyles carry their own outline in `ControlStyles.axaml` (buttons, nav items, tree items, the editable editor).
 3. Diff and validation states never rely on color alone (see §5.3).
 4. Respect the OS reduced-motion setting; skip nonessential transitions (panel resize, chip hover) when it is set.
-5. Screen-reader labels announce a Plan chip's operation and item code together, not the glyph alone.
+5. Screen-reader labels announce a Plan chip's operation and item code together, not the glyph alone; the Plan rows bind `AutomationProperties.Name` to that phrase.
 6. Unsaved state is announced as text ("unsaved"), not only by the dot glyph; tooltips carry the rule (save before planning) so the chip teaches as well as flags.

@@ -177,6 +177,7 @@
                                     <TextBlock Grid.Column="2" Classes="icon" Text="!"
                                                Foreground="{DynamicResource ValidationErrorBrush}"
                                                IsVisible="{Binding HasProblems}"
+                                               AutomationProperties.Name="{Binding ProblemSummary}"
                                                ToolTip.Tip="{Binding ProblemSummary}" />
                                 </Grid>
                             </TreeDataTemplate>

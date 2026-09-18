@@ -199,7 +199,18 @@
                                                 Classes.update="{Binding IsUpdate}"
                                                 Classes.delete="{Binding IsDelete}"
                                                 Classes.unchanged="{Binding IsUnchanged}">
-                                            <TextBlock Classes="onAccent" Text="{Binding OperationText}" />
+                                            <!-- §6.5: announced as one phrase —
+                                                 operation, code and title
+                                                 together — not as a bare glyph. -->
+                                            <TextBlock Classes="onAccent" Text="{Binding OperationText}">
+                                                <AutomationProperties.Name>
+                                                    <MultiBinding StringFormat="{}{0} {1} {2}">
+                                                        <Binding Path="OperationText" />
+                                                        <Binding Path="Badge" />
+                                                        <Binding Path="Title" />
+                                                    </MultiBinding>
+                                                </AutomationProperties.Name>
+                                            </TextBlock>
                                         </Border>
                                         <Border Grid.Column="1" Classes="badge"
                                                 Classes.solid="{Binding IsEpic}">
