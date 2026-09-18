@@ -65,12 +65,26 @@ sequence records how it was built.
 
 ## Import integrity rules
 
+These six hold at import time, and import only.
+
 1. Each ABSD code exists exactly once as a GitHub Issue.
 2. Each delivery Issue has exactly one area label, `type:delivery`, and `app:desktop`.
 3. Each Epic Issue has exactly one area label, `type:epic`, and `app:desktop`.
 4. Each Issue is in the ADO Board Sync Desktop Delivery Project exactly once.
 5. Every dependency named in the backlog is visible in the Issue body.
 6. No source issue is marked Done during import.
+
+## Ongoing integrity rules
+
+After import the board moves with the work, so rule 6 above stops applying the
+moment a ticket genuinely finishes. These rules govern the board from then on:
+
+1. An issue closes only when its `STATUS.md` row reads Done — never before, and
+   not long after (the row and the board move in the same change).
+2. An open issue's Project Delivery state follows its `STATUS.md` row through the
+   vocabulary mapping below.
+3. Issue bodies and comments record what was true when they were written; they
+   are not evidence of current state. `STATUS.md` is the only live source.
 
 ## Vocabulary mapping (added 2026-09-01)
 

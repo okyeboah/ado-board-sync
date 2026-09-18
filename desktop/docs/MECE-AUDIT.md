@@ -83,8 +83,10 @@ unexamined construct is indistinguishable from a verified one.
 | 16 | Gap | Relative path resolution for `board_file` and `csv_file` was unit-tested against our own expectation, never against Python's `normpath(join(...))`. | Added three relative-path parity scenarios, including `..` segments. |
 | 17 | Gap | Nothing prevented a future key or construct from arriving without a scenario. | `ParityCoverageTests` fails when a schema key or a documented Markdown construct has no scenario behind it. |
 
-Markdown construct coverage was checked and found complete: all 15 documented
-constructs appear in a fixture.
+Markdown construct coverage was checked and found complete: all 14 constructs
+the guard enumerates appear as its fixture rows (`ParityCoverageTests` holds 14
+`[InlineData]` rows plus one guard fact; FSD §3.2.3's line-wrap and blank-line
+rules are exercised by the wrapping fixtures rather than enumerated as rows).
 
 ## Standing rule
 
