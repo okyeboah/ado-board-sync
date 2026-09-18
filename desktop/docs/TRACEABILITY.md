@@ -52,6 +52,12 @@ behaviour on their own. Their gate is named explicitly so "no AC" never means
 | ABSD-102 Config loader and schema validation | Two gates, because the ticket names two things: `BoardConfigParityTests.*` for resolution matching `config.py`, and `BoardConfigSchemaTests.*` for the constraints in `board.config.schema.json` that a deserialize does not enforce. **Both met.** |
 | ABSD-301 Azure DevOps connector | Contract tests against a fixture connector; no live Azure DevOps call in any test. **Partially met:** the fake exercises create, update, delete, and the batched read that carries each item's parent id; the live write tests remain gated behind `ADO_BOARD_SYNC_LIVE_WRITE`. |
 | ABSD-505 Continuous integration | `.github/workflows/build-and-test.yml` runs the CLI suite and the .NET build, unit, and parity suites on a clean checkout. **Met.** |
+| ABSD-701 Provider discovery | `AgentProviderRegistryTests` pin discovery and the no-credential rule; `ShellInteractionTests.TheAgentPaneOpensAndStatesWhatItWillRunBeforeItRunsAnything` opens the pane that shows what was found. **Met.** |
+| ABSD-702 Subprocess run and cancel | `AgentRunnerTests` pin the scoped environment and typed exit; `AgentAuthoringViewModelTests` pin cancel and the run lifecycle; the pane's Run/Cancel controls are exercised by the binding walk. **Met.** |
+| ABSD-703 Prompt surface and disclosures | `ShellInteractionTests.TheAgentPaneOpensAndStatesWhatItWillRunBeforeItRunsAnything` and `.TheAgentPaneWillNotRunWithoutAPromptAndScopesItselfToTheSelection` — the three disclosures, the run gate, and selection-driven scope, at the view. **Met.** |
+| ABSD-704 Diff review | `AgentEditSessionTests` (14) and `TextDiffTests` (11) pin snapshot/restore-to-the-byte and the diff itself; `AgentAuthoringViewModelTests` drive accept and reject through the review. **Met.** |
+| ABSD-705 Consequences through the gate | `AgentAuthoringViewModelTests` — a Plan request before an accept is refused; `ShellInteractionTests.TheAgentPaneOffersNoPathToTheBoardOfItsOwn` — the pane offers no board write of its own. **Met.** |
+| ABSD-706 Agent-run readback | `HistoryTimelineTests` — agent runs scoped per profile, verdicts carried, `Clear` empties them; `ShellInteractionTests.TheHistoryPaneRendersARecordedRunAndExpandsItsOutcomes` renders one through the real view. **Met.** |
 
 An earlier revision of this file marked ABSD-102 **Met** on the parity tests
 alone, while the schema validation its Outcome names did not exist. A gate that

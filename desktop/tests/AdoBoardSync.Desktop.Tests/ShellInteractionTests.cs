@@ -558,6 +558,21 @@ public class ShellInteractionTests
         Assert.True(recorded.IsSuccess, recorded.Error?.SafeMessage);
         var completed = await history.CompleteRunAsync(runId, DateTimeOffset.UtcNow, 1, 0, "Import · 1 created");
         Assert.True(completed.IsSuccess, completed.Error?.SafeMessage);
+
+        var agentRun = await history.RecordRunAsync(new Core.Agents.AgentRunRecord
+        {
+            ProfileKey = profileKey,
+            ProviderId = "claude",
+            ProviderVersion = "2.1.0",
+            Prompt = "Add a runbook task to every Issue.",
+            Scope = "Backlog",
+            StartedAt = DateTimeOffset.UtcNow,
+            Status = "Completed",
+            ExitCode = 0,
+            EditAccepted = null,
+            Summary = "1 issue's description rewritten",
+        });
+        Assert.True(agentRun.IsSuccess, agentRun.Error?.SafeMessage);
         return history;
     }
 
@@ -582,7 +597,7 @@ public class ShellInteractionTests
 
                 var window = new MainWindow(Shell.WithSurfaces(ShellSurfaces.StandAlone() with
                 {
-                    History = new HistoryViewModel(history),
+                    History = new HistoryViewModel(history, history),
                 }));
                 try
                 {
@@ -617,6 +632,18 @@ public class ShellInteractionTests
                     Assert.True(
                         UiHarness.ShowsText(window, "Created #42"),
                         "The expanded run did not show the recorded outcome.");
+
+                    // ABSD-706 at the view: the recorded agent run is on the same
+                    // timeline, with its provider and its verdict.
+                    Assert.True(
+                        UiHarness.ShowsText(window, "Agent runs"),
+                        "The pane offered no agent section.");
+                    Assert.True(
+                        UiHarness.ShowsText(window, "claude 2.1.0"),
+                        "The recorded agent run never reached the timeline.");
+                    Assert.True(
+                        UiHarness.ShowsText(window, "under review"),
+                        "The agent run's verdict was not shown.");
                 }
                 finally
                 {

@@ -17,6 +17,17 @@
             <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingS}">
                 <Button Classes="quiet" Content="Refresh" Click="OnRefresh"
                         IsEnabled="{Binding !History.IsBusy}" />
+                <!-- The filters the Outcome names: by command and by age. They
+                     narrow the page that was loaded; the caption says when the
+                     page itself is the limit. -->
+                <ComboBox x:Name="CommandFilter"
+                          MinWidth="140"
+                          ItemsSource="{Binding History.CommandChoices}"
+                          SelectedItem="{Binding History.SelectedCommand, Mode=TwoWay}" />
+                <ComboBox x:Name="SpanFilter"
+                          MinWidth="130"
+                          ItemsSource="{Binding History.Spans}"
+                          SelectedItem="{Binding History.SelectedSpan, Mode=TwoWay}" />
                 <TextBlock Classes="body secondary" VerticalAlignment="Center"
                            Text="{Binding History.StatusText}" />
             </StackPanel>
@@ -35,8 +46,21 @@
                            Text="Once you confirm an Apply on the Plan surface, it is recorded here with the outcome of every row in it." />
             </StackPanel>
 
-            <ScrollViewer IsVisible="{Binding History.HasRuns}">
-                <ItemsControl ItemsSource="{Binding History.Runs}">
+            <StackPanel Classes="statePanel">
+                <StackPanel.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="History.HasRuns" />
+                        <Binding Path="History.HasVisibleRuns" />
+                    </MultiBinding>
+                </StackPanel.IsVisible>
+                <TextBlock Classes="stateTitle" Text="No runs match the filter" />
+                <TextBlock Classes="stateBody"
+                           Text="The command or the time span above has hidden every run on the page. Widen it to see them again." />
+            </StackPanel>
+
+            <ScrollViewer IsVisible="{Binding History.HasVisibleRuns}">
+                <StackPanel Spacing="{StaticResource SpacingM}">
+                <ItemsControl ItemsSource="{Binding History.FilteredRuns}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:OperationRunViewModel">
                             <Border Classes="card" Margin="0,0,0,8">
@@ -107,6 +131,49 @@
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
+
+                <!-- ABSD-706: every agent run recorded against this profile. A
+                     change in an agent's behaviour is attributable, not guessed
+                     at — so the verdict sits beside the status. -->
+                <StackPanel Spacing="{StaticResource SpacingXS}"
+                            IsVisible="{Binding History.HasAgentSection}">
+                    <TextBlock Classes="sectionTitle" Text="Agent runs" />
+                    <TextBlock Classes="caption" TextWrapping="Wrap"
+                               IsVisible="{Binding !History.HasAgentRuns}"
+                               Text="No agent has run against this profile on this machine." />
+                    <ItemsControl ItemsSource="{Binding History.AgentRuns}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:AgentRunViewModel">
+                                <Border Classes="card" Margin="0,0,0,8">
+                                    <StackPanel Spacing="{StaticResource SpacingXS}">
+                                        <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="{StaticResource SpacingS}">
+                                            <TextBlock Grid.Column="0" Classes="icon"
+                                                       VerticalAlignment="Center"
+                                                       Text="{Binding Verdict}" />
+                                            <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                        Spacing="{StaticResource SpacingS}">
+                                                <TextBlock Classes="value" Text="{Binding Provider}" />
+                                                <TextBlock Classes="caption" VerticalAlignment="Center"
+                                                           Text="{Binding Verdict}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Classes="caption"
+                                                       HorizontalAlignment="Right"
+                                                       Text="{Binding StartedAt}" />
+                                        </Grid>
+                                        <TextBlock Classes="caption" Text="{Binding Scope}" />
+                                        <TextBlock Classes="caption" TextTrimming="CharacterEllipsis"
+                                                   ToolTip.Tip="{Binding FullPrompt}"
+                                                   Text="{Binding Prompt}" />
+                                        <TextBlock Classes="caption" Text="{Binding Status}" />
+                                        <TextBlock Classes="caption" TextWrapping="Wrap"
+                                                   Text="{Binding Run.Summary}" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+                </StackPanel>
             </ScrollViewer>
         </Panel>
     </Grid>
