@@ -244,9 +244,67 @@ public class MainWindowViewModelTests
     }
 
     [Fact]
-    public async Task SavingWithNothingDirtyDoesNotTouchTheFile()
+    public async Task AnIdenticalRewriteIsNotAnExternalChange()
     {
-        var directory = Directory.CreateTempSubdirectory("abs-desktop-noop-").FullName;
+        // An editor that saves its own identical bytes must not trip the poll:
+        // the stamp compares content, not timestamps, so a rewrite that produced
+        // exactly what was opened is no change at all.
+        var directory = Directory.CreateTempSubdirectory("abs-desktop-poll-").FullName;
+        try
+        {
+            var backlog = Path.Combine(directory, "backlog.md");
+            File.WriteAllText(backlog, SavedBacklog);
+            using var profile = TempBoardProfile.Create(backlog);
+
+            var model = Shell.OnDisk();
+            await model.LoadAsync(profile.ConfigPath);
+
+            File.WriteAllText(backlog, SavedBacklog);
+            await model.CheckForExternalChangeAsync();
+
+            Assert.False(model.IsStale);
+            Assert.Empty(model.ExternalChangeText);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task ABacklogThatCannotBeReadDoesNotRaiseTheStaleBanner()
+    {
+        // A write caught mid-rename, or a share that dropped for a moment, makes
+        // the file unreadable — that is not evidence of a change, and a banner
+        // that raised and cleared itself a second later would be noise.
+        var directory = Directory.CreateTempSubdirectory("abs-desktop-poll-").FullName;
+        try
+        {
+            var backlog = Path.Combine(directory, "backlog.md");
+            File.WriteAllText(backlog, SavedBacklog);
+            using var profile = TempBoardProfile.Create(backlog);
+
+            var model = Shell.OnDisk();
+            await model.LoadAsync(profile.ConfigPath);
+
+            File.Delete(backlog);
+            await model.CheckForExternalChangeAsync();
+            Assert.False(model.IsStale);
+
+            // Restored, and still not stale — the failed read never changed it.
+            File.WriteAllText(backlog, SavedBacklog);
+            await model.CheckForExternalChangeAsync();
+            Assert.False(model.IsStale);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public async Task SavingWithNothingDirtyDoesNotTouchTheFile()
+    {        var directory = Directory.CreateTempSubdirectory("abs-desktop-noop-").FullName;
         try
         {
             var backlog = Path.Combine(directory, "backlog.md");

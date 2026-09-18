@@ -33,7 +33,7 @@ must reach **Covered** before the release slice that contains it can close.
 | PRD-AC-12 assignee plan sets owners | §3.8 | ABSD-402 | `AcceptanceTests.AnAssigneePlanOwnsEveryListedIssueAndItsTasksAndReportsSettledOnesUnchanged` — the first-listed identity wins a shared code, Tasks follow their Issue, and an already-correct item is reported **Unchanged** and never written. That last clause was the criterion's own doing: settled items were previously dropped from the plan entirely | Covered |
 | PRD-AC-13 a stale plan is refused | §3.4.1 | ABSD-303 | `ApplyExecutorTests.ApplyIsRefusedWhenTheBacklogChangedAfterTheReview`, `.ApplyIsRefusedWhenTheBoardChangedAfterTheReview`, `PlanViewModelTests.AConfirmedApplyIsStillRefusedWhenTheBoardMoved`, `LiveBoardTests.ApplyIsRefusedWhenTheBacklogMovedAfterThePlanWasBuilt` — each asserting nothing was written before the refusal | Covered |
 | PRD-AC-14 profiles do not mix | §3.11 | ABSD-502 | `AcceptanceTests.SwitchingProfileMixesNothingFromThePreviousOne` — after opening a second profile, none of the first's backlog items survive, the code prefix follows, the Plan is discarded, and the sprint and assignee tables are the second profile's; `HistoryTimelineTests` scope every run to the active profile key; `ProfileSwitchingTests` (25) cover the registry, the file it persists to and the switcher ring | Covered |
-| PRD-AC-15 external change forces a reload | §3.11.3 | ABSD-504 | `MainWindowViewModelTests.ASaveRefusesToOverwriteAnExternalChange` asserts the refusal, that the external edit survives byte-for-byte, and that the buffer is preserved | Partial — the save-side guard is tested; the proactive watcher that marks a profile stale before any save attempt does not exist yet |
+| PRD-AC-15 external change forces a reload | §3.11.3 | ABSD-504 | `AcceptanceTests.AnExternalEditIsNoticedBeforeAnythingIsAttemptedAndBlocksPlanningUntilReloaded` asserts the proactive half — the poll marks the profile stale before any save or Plan attempt, the gate refuses with the board never read, and the explicit reload clears it; `ShellInteractionTests.TheStaleBannerAppearsWhenTheFileChangesAndReloadClearsIt` shows the banner in the real window; `MainWindowViewModelTests.ASaveRefusesToOverwriteAnExternalChange` keeps the save-side guard's row: the external edit survives byte-for-byte and the buffer is preserved; `.AnIdenticalRewriteIsNotAnExternalChange` and `.ABacklogThatCannotBeReadDoesNotRaiseTheStaleBanner` pin the stamp's hash semantics | Covered — the proactive half is a content-stamp poll on a timer and on window activation, chosen over `FileSystemWatcher` for the reasons recorded on `MainWindowViewModel.CheckForExternalChangeAsync` |
 | PRD-AC-16 CSV matches `gen-csv` | §3.9 | ABSD-204, ABSD-207 | `ImportCsvParityTests.Csv_MatchesThePythonImplementation` over every backlog fixture — byte-for-byte against the live Python csv writer; `ImportCsvTests.*` pin quoting/type-name rules; `MainWindowViewModelTests.ExportCsvWritesTheGenCsvBytesWithoutACredential` covers the app path | Covered |
 | PRD-AC-17 released package runs without a toolchain | — | ABSD-601 | `AcceptanceTests.ThePackagingScriptsProduceASelfContainedBuildThatNeedsNoToolchain` pins what the criterion turns on — that `publish.sh` publishes `--self-contained` with `PublishSingleFile`, and that `package.sh` stamps unsigned output as such rather than letting it look installable | Partial — no in-process test can install a package. The criterion itself was checked empirically once: the published 109 MB binary was run under `env -i HOME=… PATH=/usr/bin:/bin` with no .NET toolchain reachable and started cleanly. That is a manual step, and signing remains unproven for want of certificates |
 | PRD-AC-18 edit, preview, and save round trip | §3.2 | ABSD-203, ABSD-206 | `BacklogNodeViewModelTests.EditingTheSourceRecomputesEveryDerivedView`, `.ABufferEqualToTheFileIsNotDirty`, `.DiscardEditsRestoresTheParsedTextExactly`, `.AnEpicBufferIsNeverMinedForTasks`; `MainWindowViewModelTests.AnEditMarksTheProfileUnsavedAndSaveWritesTheFile` (file holds exactly the edited blocks, task count updates), `.ASaveReParsesAndKeepsTheSelectionOnTheSameItem`, `.TwoEditedItemsAreSplicedBackTogether`; Core: `BacklogSplicerTests.*` (9 tests — separators, EOL style, multi-edit ordering, round trip over the standard fixture), `BacklogParserTests.EveryItemCarriesTheRangeOfItsDescriptionBlock`, `.TheDescriptionRangeCoversExactlyTheDescriptionLines` | Covered |
@@ -84,8 +84,8 @@ not ready to start (CONVENTIONS rule 7).
 | Measure | Value |
 | --- | --- |
 | Criteria total | 20 |
-| Covered | 17 |
-| Partial | 3 |
+| Covered | 19 |
+| Partial | 1 |
 | Open | 0 |
 | Enabling gates met | 3 of 4 |
 
@@ -109,15 +109,16 @@ The converter escapes raw angle brackets on both sides, so the audit guards the
 converter's output rather than the user's input, and the existing tests are the
 right ones for that reading.
 
-The two that remain Partial are honest about *why*, and neither is
+The one that remains Partial is honest about *why*, and it is not
 waiting on a test that could simply be written:
 
-- **AC-15** has its save-side guard: a save refuses to overwrite an external
-  change and the buffer survives. The proactive watcher that marks a profile
-  stale *before* a save is attempted does not exist (ABSD-504).
 - **AC-17** needs an installed package on a clean machine. The published binary
   was run once under `env -i` with no toolchain and started; signing is
   unproven for want of certificates.
+
+AC-15 moved Partial → Covered on 2026-09-11. Its proactive half had been built
+as a content-stamp poll and acceptance-tested; this file still described it as
+unbuilt.
 
 The Covered rows were built parity-critical first — parser, conversion,
 validator, CSV export, stale-plan refusal — then editing and onboarding

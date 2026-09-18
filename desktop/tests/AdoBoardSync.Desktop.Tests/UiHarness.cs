@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -27,6 +28,16 @@ namespace AdoBoardSync.Desktop.Tests;
 internal static class UiHarness
 {
     private static readonly Lock Gate = new();
+
+    // One dedicated UI thread owns the platform and every job that touches it.
+    // SetupWithoutStarting makes the calling thread the dispatcher's owner, so
+    // whichever xunit worker happened to boot the platform first used to own it —
+    // and every other worker's Dispatcher.Invoke queued a job only that owner
+    // could ever run. When the owner moved on, the queued job waited forever: the
+    // deadlock a full-suite run died of while no single class ever reproduced it.
+    // A thread of our own closes that race for good.
+    private static BlockingCollection<Work>? _queue;
+
     private static bool _started;
 
     private static void EnsurePlatform()
@@ -38,19 +49,160 @@ internal static class UiHarness
                 return;
             }
 
-            AppBuilder.Configure<App>()
-                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = true })
-                .SetupWithoutStarting();
+            var queue = new BlockingCollection<Work>();
+            var running = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var thread = new Thread(() =>
+            {
+                AppBuilder.Configure<App>()
+                    .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = true })
+                    .SetupWithoutStarting();
 
+                // Await continuations must come back to this thread — a window
+                // owns nothing elsewhere, and a continuation on the pool is what
+                // made window.Close() an affinity violation.
+                SynchronizationContext.SetSynchronizationContext(new UiThreadContext(queue));
+
+                running.TrySetResult();
+                foreach (var work in queue.GetConsumingEnumerable())
+                {
+                    try
+                    {
+                        work.Body();
+                        work.Done.TrySetResult();
+                    }
+                    catch (Exception ex)
+                    {
+                        work.Done.TrySetException(ex);
+                    }
+                }
+            })
+            {
+                IsBackground = true,
+                Name = "ui-harness",
+            };
+            thread.Start();
+            running.Task.Wait(TimeSpan.FromSeconds(30));
+
+            _queue = queue;
             _started = true;
         }
     }
 
-    /// <summary>Runs on the UI thread, starting the platform if it is not up yet.</summary>
-    public static void OnUiThread(Action action)
+    private static Work Post(Action body)
     {
         EnsurePlatform();
-        Dispatcher.UIThread.Invoke(action);
+        var work = new Work(body);
+        _queue!.Add(work);
+        return work;
+    }
+
+    /// <summary>Runs on the UI thread, and waits for it there.</summary>
+    public static void OnUiThread(Action action)
+    {
+        Post(action).Done.Task.GetAwaiter().GetResult();
+    }
+
+    /// <summary>
+    /// Runs an awaited interaction on the UI thread, end to end.
+    ///
+    /// The body is queued whole; at its first await it yields the thread and its
+    /// continuations are queued back onto it by the context, so a suspended test
+    /// never holds anything up — the next queued job, this or another test's, runs
+    /// while it waits, exactly as a window's message loop would interleave them.
+    /// The caller blocks on its own completion only.
+    /// </summary>
+    public static void AwaitOnUiThread(Func<Task> action)
+    {
+        var done = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Post(() => _ = Drive(action, done));
+
+        if (!done.Task.Wait(TimeSpan.FromSeconds(30)))
+        {
+            Assert.Fail("The awaited interaction did not complete on the UI thread.");
+        }
+
+        // A faulted interaction must fail the test that caused it, not time out.
+        done.Task.GetAwaiter().GetResult();
+    }
+
+    private static async Task Drive(Func<Task> action, TaskCompletionSource done)
+    {
+        try
+        {
+            await action().ConfigureAwait(true);
+            done.TrySetResult();
+        }
+        catch (Exception ex)
+        {
+            done.TrySetException(ex);
+        }
+    }
+
+    /// <summary>Puts every await continuation back on the UI thread it left.</summary>
+    private sealed class UiThreadContext(BlockingCollection<Work> queue) : SynchronizationContext
+    {
+        public override void Post(SendOrPostCallback callback, object? state) =>
+            queue.Add(new Work(() => callback(state)));
+
+        public override void Send(SendOrPostCallback callback, object? state)
+        {
+            if (SynchronizationContext.Current is UiThreadContext)
+            {
+                callback(state);
+                return;
+            }
+
+            var work = new Work(() => callback(state));
+            queue.Add(work);
+            work.Done.Task.GetAwaiter().GetResult();
+        }
+    }
+
+    private sealed class Work(Action body)
+    {
+        public Action Body { get; } = body;
+
+        public TaskCompletionSource Done { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+
+    /// <summary>
+    /// Waits for a condition the shell reaches through a fire-and-forget task —
+    /// profile registration and the timeline load are both <c>_ =</c> calls in
+    /// <c>Adopt</c> — by giving the UI thread's queue time to run them. The
+    /// sync-blocking form is for callers outside the UI thread; inside an
+    /// <see cref="AwaitOnUiThread" /> body it would stop the very queue that has
+    /// to run the condition into being, so await <see cref="WaitUntilAsync" /> there.
+    /// </summary>
+    public static void WaitUntil(Func<bool> condition, string because)
+    {
+        var deadline = Environment.TickCount64 + 30_000;
+        while (!condition())
+        {
+            if (Environment.TickCount64 > deadline)
+            {
+                Assert.True(condition(), because);
+            }
+
+            Thread.Sleep(10);
+        }
+    }
+
+    /// <summary>The awaitable form of <see cref="WaitUntil" />, for use inside an
+    /// <see cref="AwaitOnUiThread" /> body: each wait yields the thread, so the
+    /// queue can run whatever the condition is waiting for.</summary>
+    public static async Task WaitUntilAsync(Func<bool> condition, string because)
+    {
+        var deadline = Environment.TickCount64 + 30_000;
+        while (!condition())
+        {
+            if (Environment.TickCount64 > deadline)
+            {
+                Assert.True(condition(), because);
+            }
+
+            await Task.Delay(10).ConfigureAwait(true);
+        }
     }
 
     /// <summary>Lets queued layout, binding and rendering work run to completion.</summary>

@@ -142,23 +142,30 @@ public class WindowLaunchTests
     [Fact]
     public void ThePlanSectionRendersWithAProfileOpen()
     {
-        OnUiThread(() =>
+        UiHarness.AwaitOnUiThread(async () =>
         {
             var window = new MainWindow();
-            var model = (ViewModels.MainWindowViewModel)window.DataContext!;
+            try
+            {
+                var model = (ViewModels.MainWindowViewModel)window.DataContext!;
 
-            using var profile = TestKit.TempBoardProfile.Create(
-                TestKit.RepoPaths.Fixture("backlog", "standard.md"));
+                using var profile = TestKit.TempBoardProfile.Create(
+                    TestKit.RepoPaths.Fixture("backlog", "standard.md"));
 
-            window.LoadProfile(profile.ConfigPath);
-            window.Show();
-            model.CurrentSectionIndex = 1;
-            Dispatcher.UIThread.RunJobs();
+                window.Show();
+                await model.LoadAsync(profile.ConfigPath);
 
-            Assert.True(model.ShowPlan);
-            Assert.True(model.HasProfile);
-            Assert.False(model.ShowOnboarding);
-            window.Close();
+                model.CurrentSectionIndex = 1;
+                Dispatcher.UIThread.RunJobs();
+
+                Assert.True(model.ShowPlan);
+                Assert.True(model.HasProfile);
+                Assert.False(model.ShowOnboarding);
+            }
+            finally
+            {
+                window.Close();
+            }
         });
     }
 
