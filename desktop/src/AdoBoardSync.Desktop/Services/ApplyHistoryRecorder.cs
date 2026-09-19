@@ -6,20 +6,17 @@ namespace AdoBoardSync.Desktop.Services;
 
 /// <summary>
 ///     Records one Apply run in the operation history as it happens (ABSD-501).
-///
 ///     It reports its own failures to diagnostics but does not narrate the Apply.
 ///     The started/finished/row-failed events it wrote by hand duplicated
 ///     DiagnosticsExtensions in a second vocabulary; the Plan gate emits those now
 ///     (ABSD-507). What remains here is what only this class knows: that the
 ///     history store would not take a write.
-///
 ///     It sits between the Plan gate and the store rather than inside either,
 ///     because recording must not be able to fail the write it is recording. Every
 ///     method here swallows a store failure into diagnostics and returns: a history
 ///     that cannot be written is a support problem, while an Apply that aborts
 ///     because its audit trail is unavailable is a correctness problem, and the
 ///     second is much worse than the first.
-///
 ///     The run is opened before the first write and completed after the last, so a
 ///     crash mid-Apply leaves an open run — which is exactly what a crash should
 ///     look like afterwards, rather than no record at all.
@@ -37,6 +34,8 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
     /// </summary>
     private readonly Lock _gate = new();
 
+    private int _failed;
+
     /// <summary>
     ///     The chain every store write is appended to. Recording is fire-and-forget
     ///     from the caller's point of view, but the writes still have to reach the
@@ -48,7 +47,6 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
     private long? _runId;
     private int _sequence;
     private int _succeeded;
-    private int _failed;
 
     /// <summary>True once a run is open and outcomes can be appended to it.</summary>
     public bool IsRecording
@@ -93,11 +91,11 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
         {
             _runId = begun.Value;
         }
-
     }
 
     /// <summary>Appends one row's outcome, in the reviewed Plan's own order.</summary>
-    public async Task RecordAsync(ApplyOutcome outcome, DateTimeOffset at, CancellationToken cancellationToken = default)
+    public async Task RecordAsync(ApplyOutcome outcome, DateTimeOffset at,
+        CancellationToken cancellationToken = default)
     {
         long runId;
         int sequence;
@@ -106,13 +104,9 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
         lock (_gate)
         {
             if (outcome.Succeeded)
-            {
                 _succeeded++;
-            }
             else
-            {
                 _failed++;
-            }
 
             if (_runId is not { } open)
             {
@@ -157,14 +151,11 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
                 Title = outcome.Row.Title,
                 BoardId = outcome.BoardId,
                 Succeeded = outcome.Succeeded,
-                Message = outcome.Message,
+                Message = outcome.Message
             },
             cancellationToken);
 
-        if (recorded.IsFailure)
-        {
-            Report("apply.outcome_unrecorded", recorded.Error!.SafeMessage);
-        }
+        if (recorded.IsFailure) Report("apply.outcome_unrecorded", recorded.Error!.SafeMessage);
 
         // A failed row is not reported here: the Plan gate's ApplyFinished names
         // every failed row by issue code. This event named it by title, which is
@@ -182,10 +173,7 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
 
         lock (_gate)
         {
-            if (_runId is not { } open)
-            {
-                return;
-            }
+            if (_runId is not { } open) return;
 
             runId = open;
             _runId = null;
@@ -202,11 +190,7 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
         var completed = await history.CompleteRunAsync(
             runId, finishedAt, succeeded, failed, summary, cancellationToken);
 
-        if (completed.IsFailure)
-        {
-            Report("apply.run_unclosed", completed.Error!.SafeMessage);
-        }
-
+        if (completed.IsFailure) Report("apply.run_unclosed", completed.Error!.SafeMessage);
     }
 
     /// <summary>
@@ -229,7 +213,8 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
     ///     stays right; only the per-row detail is lost, and diagnostics says so
     ///     rather than letting it vanish silently.
     /// </summary>
-    private void ReportUnrecorded(ApplyOutcome outcome, DateTimeOffset at) =>
+    private void ReportUnrecorded(ApplyOutcome outcome, DateTimeOffset at)
+    {
         _diagnostics.Write(new DiagnosticEvent
         {
             Timestamp = at,
@@ -238,16 +223,55 @@ public sealed class ApplyHistoryRecorder(IOperationHistory history, IDiagnostics
             Code = "apply.no_open_run",
             // The code, not the title: a title is the user's own prose, and this
             // file is the one users are asked to attach to a support conversation.
-            Message = $"Outcome not recorded, no run is open: {outcome.Row.Code}",
+            Message = $"Outcome not recorded, no run is open: {outcome.Row.Code}"
         });
+    }
 
-    private void Report(string code, string message) =>
+    private void Report(string code, string message)
+    {
         _diagnostics.Write(new DiagnosticEvent
         {
             Timestamp = DateTimeOffset.UtcNow,
             Level = DiagnosticLevel.Warning,
             Category = "apply",
             Code = code,
-            Message = $"The operation history could not be written: {message}",
+            Message = $"The operation history could not be written: {message}"
         });
+    }
+
+    /// <summary>
+}
+
+/// Puts each outcome on the history recorder's queue immediately, then hands
+/// it to the bound collection through the dispatcher.
+/// 
+/// The order matters and the synchrony matters. Apply reports an outcome from
+/// whichever worker finished the write, and closes the run as soon as the last
+/// one returns. Anything that deferred the recording — a Progress&lt;T&gt;, a
+/// Task.Run — would still be waiting to start when the run closed, and the
+/// store refuses outcomes for a completed run: the rows would be dropped with
+/// nothing but a diagnostics line to say so.
+/// </summary>
+internal sealed class RecordingProgress(
+    IProgress<ApplyOutcome> ui,
+    ApplyHistoryRecorder? recorder,
+    CancellationToken cancellationToken)
+    : IProgress<ApplyOutcome>
+
+{
+    public void Report(ApplyOutcome value)
+
+    {
+        // Fire-and-forget, but already queued: the recorder chains this write
+
+        // internally and CompleteAsync awaits that chain. Recording never paces
+
+        // the board writes, and it swallows its own failures rather than
+
+        // turning a support problem into a failed Apply.
+
+        _ = recorder?.RecordAsync(value, DateTimeOffset.UtcNow, cancellationToken);
+
+        ui.Report(value);
+    }
 }

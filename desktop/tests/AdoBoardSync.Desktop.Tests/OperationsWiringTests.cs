@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Reflection;
 using AdoBoardSync.Core.Agents;
 using AdoBoardSync.Core.Board;
+using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Diagnostics;
 using AdoBoardSync.Core.Operations;
 using AdoBoardSync.Desktop.Composition;
@@ -13,15 +14,14 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AdoBoardSync.Desktop.Tests;
 
 /// <summary>
-/// Proves the operations ports are actually reachable from the running app.
-///
-/// <see cref="CompositionRootTests" /> sweeps Core for ports by naming convention
-/// — <c>I…Store</c>, <c>I…Reader</c>, <c>I…Writer</c>, <c>I…Source</c> — which is
-/// a good guard but does not see <see cref="IOperationHistory" />,
-/// <see cref="IDiagnostics" />, <see cref="IAgentRunner" /> or their neighbours.
-/// Those four were each built, tested and then wired nowhere; the tests below are
-/// what would have caught that, because a container misconfiguration otherwise
-/// only shows up when a user clicks the button.
+///     Proves the operations ports are actually reachable from the running app.
+///     <see cref="CompositionRootTests" /> sweeps Core for ports by naming convention
+///     — <c>I…Store</c>, <c>I…Reader</c>, <c>I…Writer</c>, <c>I…Source</c> — which is
+///     a good guard but does not see <see cref="IOperationHistory" />,
+///     <see cref="IDiagnostics" />, <see cref="IAgentRunner" /> or their neighbours.
+///     Those four were each built, tested and then wired nowhere; the tests below are
+///     what would have caught that, because a container misconfiguration otherwise
+///     only shows up when a user clicks the button.
 /// </summary>
 public class OperationsWiringTests
 {
@@ -70,7 +70,7 @@ public class OperationsWiringTests
         // model built in a test quietly read the developer's own keychain.
         using var provider = AppServices.Build();
 
-        var registered = provider.GetRequiredService<Core.Configuration.ICredentialStore>();
+        var registered = provider.GetRequiredService<ICredentialStore>();
         var resolved = provider.GetRequiredService<PlanViewModel>();
         var standalone = new PlanViewModel();
 
@@ -208,7 +208,7 @@ public class OperationsWiringTests
         foreach (var table in new object[]
                  {
                      provider.GetRequiredService<SprintPlanningViewModel>(),
-                     provider.GetRequiredService<AssigneePlanningViewModel>(),
+                     provider.GetRequiredService<AssigneePlanningViewModel>()
                  })
         {
             // BaseType: _reload is private on PlanningTableViewModel<TRow>, and
@@ -218,9 +218,9 @@ public class OperationsWiringTests
                 .GetValue(table)!;
 
             Assert.False(
-                reload.Method.Name.Contains("DefaultReload", StringComparison.Ordinal),
-                $"{table.GetType().Name} fell back to its own ProfileLoader; the container "
-                + "registered none, so the composition root is being bypassed.");
+                reload.Method.Name.Contains("NoReload", StringComparison.Ordinal),
+                $"{table.GetType().Name} fell back to the stand-alone refusal; the container "
+                + "registered no reload, so the composition root is being bypassed.");
         }
     }
 
@@ -243,7 +243,7 @@ public class OperationsWiringTests
             .With(InMemoryConfig.DefaultBacklogPath, "## Epic one\n\n### PROJ-1 · An issue\n");
         var loader = new ProfileLoader(store, recorded);
 
-        var opened = await loader.FromConfigAsync(InMemoryConfig.Create(), configPath: null);
+        var opened = await loader.FromConfigAsync(InMemoryConfig.Create(), null);
         Assert.True(opened.IsSuccess, opened.Error?.SafeMessage);
 
         var saved = await loader.SaveAsync(opened.Value, opened.Value.Markdown + "\n");
@@ -270,7 +270,7 @@ public class OperationsWiringTests
 
         var gate = new PlanViewModel(_ => board, diagnostics: recorded)
         {
-            SessionToken = "diagnostics-token",
+            SessionToken = "diagnostics-token"
         };
 
         await gate.GenerateAsync(workspace);
@@ -287,10 +287,8 @@ public class OperationsWiringTests
         // title is the user's prose and does not belong in a bundle.
         var titles = workspace.Items.Select(item => item.Title).Where(t => t.Length > 0);
         foreach (var title in titles)
-        {
             Assert.DoesNotContain(
                 recorded.Events.SelectMany(e => e.Data.Values).Concat(messages),
                 value => value.Contains(title, StringComparison.Ordinal));
-        }
     }
 }

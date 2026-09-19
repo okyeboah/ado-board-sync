@@ -6,38 +6,9 @@ using AdoBoardSync.Core.Diagnostics;
 using AdoBoardSync.Core.Planning;
 using AdoBoardSync.Core.Results;
 using AdoBoardSync.Desktop.Services;
-using AdoBoardSync.Infrastructure;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AdoBoardSync.Desktop.ViewModels;
-
-/// <summary>
-/// One entry in the command selector. FSD §3.3 requires the surface to state each
-/// command's scope and whether <c>sync</c> runs it, because those two facts are
-/// what a user needs before choosing — "will this touch my whole board?" and "does
-/// the everyday reconcile already do this for me?".
-///
-/// The per-command options are declared here rather than branched on in the view,
-/// so a toggle cannot be shown for a command that ignores it.
-/// </summary>
-public sealed record PlanCommandOption(
-    PlanCommand Command,
-    string Name,
-    string Scope,
-    bool InSyncChain,
-    bool NeedsCode = false,
-    bool NeedsSprint = false,
-    bool SupportsIncludeTasks = false,
-    bool SupportsAssignOnly = false,
-    bool SupportsOnlyUnassigned = false,
-    bool SupportsAssignFromParent = false)
-{
-    /// <summary>Shown beside the name, so the sync chain is legible without the docs.</summary>
-    public string ChainNote => InSyncChain ? "part of sync" : "run on its own";
-
-    public bool HasOptions =>
-        SupportsIncludeTasks || SupportsAssignOnly || SupportsOnlyUnassigned || SupportsAssignFromParent;
-}
 
 /// <summary>
 ///     The Plan/Apply gate: the only path from this app to a write. Generating a Plan
@@ -46,97 +17,23 @@ public sealed record PlanCommandOption(
 /// </summary>
 public sealed partial class PlanViewModel : ObservableObject
 {
+    /// <summary>
+    ///     The one credential chain, shared with Audit so the two surfaces cannot
+    ///     resolve a token differently. It is the first place the OS credential
+    ///     store is consulted (ABSD-103), and the badge names what answered.
+    /// </summary>
+    private readonly CredentialSession _credentials;
+
+    /// <summary>
+    ///     Where this gate's own events go (ABSD-507, ARCHITECTURE.md §7). The gate
+    ///     is the right emitter for them because it is the only place that holds a
+    ///     Plan, the duration it took, and the typed error a refusal produced — and
+    ///     because every one of these events is about the operation rather than
+    ///     about the store that records it.
+    /// </summary>
+    private readonly IDiagnostics _diagnostics;
+
     private readonly BoardGatewayFactory _gatewayFactory;
-
-    /// <summary>
-    ///     The operating system's credential store, when this machine has one. It is
-    ///     the first source <see cref="PatResolver" /> checks (ABSD-103), and the one
-    ///     the badge names when it answers.
-    /// </summary>
-    private readonly ICredentialStore _credentialStore;
-
-    /// <summary>
-    /// Which credential store this gate is actually using. Safe to show — the name
-    /// never carries a secret — and it is what lets a test prove the composition
-    /// root's store reached here rather than one built on the spot (ABSD-106).
-    /// </summary>
-    public string CredentialStoreName => _credentialStore.Name;
-
-    /// <summary>
-    ///     Set by the shell: returns true while the editor holds unsaved edits. A
-    ///     Plan is computed from the backlog file, so edits that exist only in the
-    ///     buffer must not be planned or applied as if they were on disk.
-    /// </summary>
-    public Func<bool>? UnsavedEditsCheck { get; set; }
-
-    /// <summary>
-    ///     True when the backlog file has been changed on disk since the profile was
-    ///     opened. A Plan is computed from what this app last read, so planning
-    ///     against a file somebody else has since rewritten would review one text and
-    ///     write another (ABSD-504, PRD-AC-15).
-    /// </summary>
-    public Func<bool>? StaleProfileCheck { get; set; }
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsImport))]
-    [NotifyPropertyChangedFor(nameof(IsResync))]
-    [NotifyPropertyChangedFor(nameof(IsResyncTasks))]
-    [NotifyPropertyChangedFor(nameof(SelectedCommand))]
-    [NotifyPropertyChangedFor(nameof(NeedsCode))]
-    [NotifyPropertyChangedFor(nameof(NeedsSprint))]
-    [NotifyPropertyChangedFor(nameof(HasOptions))]
-    private PlanCommand _command = PlanCommand.Import;
-
-    /// <summary>
-    ///     The Issue code <c>sync-one</c> requires and <c>resync-tasks</c> may take.
-    ///     Typed, not derived from the tree selection: the CLI takes it as an
-    ///     argument, and a surface that silently used the selected item would apply
-    ///     to something other than what the user typed.
-    /// </summary>
-    [ObservableProperty] private string _issueCode = string.Empty;
-
-    /// <summary>The sprint <c>sync-one</c> puts the Issue in. One of the configured iterations.</summary>
-    [ObservableProperty] private string _sprintName = string.Empty;
-
-    /// <summary>Cascade the change to each Issue's child Tasks. The CLI's <c>--no-tasks</c>, inverted.</summary>
-    [ObservableProperty] private bool _includeTasks = true;
-
-    /// <summary>Skip iteration-node creation and only set paths. The CLI's <c>--assign-only</c>.</summary>
-    [ObservableProperty] private bool _assignOnly;
-
-    /// <summary>Never overwrite an assignee somebody set. The CLI's <c>--only-unassigned</c>.</summary>
-    [ObservableProperty] private bool _onlyUnassigned;
-
-    /// <summary>Copy a Done parent's assignee onto the items it closes. The CLI's <c>--assign-from-parent</c>.</summary>
-    [ObservableProperty] private bool _assignFromParent;
-
-    [ObservableProperty] private string _credentialStatus = string.Empty;
-
-    /// <summary>
-    ///     True when a token resolved from some source. Every board-reading and
-    ///     board-writing action is gated on it (PRD-AC-10); offline work — opening a
-    ///     profile, the tree, the preview, markup validation, the CSV export — is not.
-    /// </summary>
-    [ObservableProperty] private bool _hasCredential;
-
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasError))]
-    private string? _errorText;
-
-    [ObservableProperty] private bool _isBusy;
-
-    /// <summary>True while the confirmation step is showing. Apply cannot run before it.</summary>
-    [ObservableProperty] private bool _isConfirming;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasPlan))]
-    [NotifyPropertyChangedFor(nameof(HasWork))]
-    [NotifyPropertyChangedFor(nameof(PlanSummary))]
-    private Plan? _plan;
-
-    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasToken))]
-    private string _sessionToken = string.Empty;
-
-    [ObservableProperty] private string _statusText = "No Plan generated yet.";
 
     /// <summary>
     ///     Records each Apply in the local history (ABSD-501). Optional: an app
@@ -152,14 +49,66 @@ public sealed partial class PlanViewModel : ObservableObject
     /// </summary>
     private readonly DiagnosticRedaction? _redaction;
 
+    /// <summary>Copy a Done parent's assignee onto the items it closes. The CLI's <c>--assign-from-parent</c>.</summary>
+    [ObservableProperty] private bool _assignFromParent;
+
+    /// <summary>Skip iteration-node creation and only set paths. The CLI's <c>--assign-only</c>.</summary>
+    [ObservableProperty] private bool _assignOnly;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsImport))]
+    [NotifyPropertyChangedFor(nameof(IsResync))]
+    [NotifyPropertyChangedFor(nameof(IsResyncTasks))]
+    [NotifyPropertyChangedFor(nameof(SelectedCommand))]
+    [NotifyPropertyChangedFor(nameof(NeedsCode))]
+    [NotifyPropertyChangedFor(nameof(NeedsSprint))]
+    [NotifyPropertyChangedFor(nameof(HasOptions))]
+    private PlanCommand _command = PlanCommand.Import;
+
+    [ObservableProperty] private string _credentialStatus = string.Empty;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasError))]
+    private string? _errorText;
+
     /// <summary>
-    ///     Where this gate's own events go (ABSD-507, ARCHITECTURE.md §7). The gate
-    ///     is the right emitter for them because it is the only place that holds a
-    ///     Plan, the duration it took, and the typed error a refusal produced — and
-    ///     because every one of these events is about the operation rather than
-    ///     about the store that records it.
+    ///     True when a token resolved from some source. Every board-reading and
+    ///     board-writing action is gated on it (PRD-AC-10); offline work — opening a
+    ///     profile, the tree, the preview, markup validation, the CSV export — is not.
     /// </summary>
-    private readonly IDiagnostics _diagnostics;
+    [ObservableProperty] private bool _hasCredential;
+
+    /// <summary>Cascade the change to each Issue's child Tasks. The CLI's <c>--no-tasks</c>, inverted.</summary>
+    [ObservableProperty] private bool _includeTasks = true;
+
+    [ObservableProperty] private bool _isBusy;
+
+    /// <summary>True while the confirmation step is showing. Apply cannot run before it.</summary>
+    [ObservableProperty] private bool _isConfirming;
+
+    /// <summary>
+    ///     The Issue code <c>sync-one</c> requires and <c>resync-tasks</c> may take.
+    ///     Typed, not derived from the tree selection: the CLI takes it as an
+    ///     argument, and a surface that silently used the selected item would apply
+    ///     to something other than what the user typed.
+    /// </summary>
+    [ObservableProperty] private string _issueCode = string.Empty;
+
+    /// <summary>Never overwrite an assignee somebody set. The CLI's <c>--only-unassigned</c>.</summary>
+    [ObservableProperty] private bool _onlyUnassigned;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasPlan))]
+    [NotifyPropertyChangedFor(nameof(HasWork))]
+    [NotifyPropertyChangedFor(nameof(PlanSummary))]
+    private Plan? _plan;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasToken))]
+    private string _sessionToken = string.Empty;
+
+    /// <summary>The sprint <c>sync-one</c> puts the Issue in. One of the configured iterations.</summary>
+    [ObservableProperty] private string _sprintName = string.Empty;
+
+    [ObservableProperty] private string _statusText = "No Plan generated yet.";
 
     public PlanViewModel(
         BoardGatewayFactory? gatewayFactory = null,
@@ -172,16 +121,8 @@ public sealed partial class PlanViewModel : ObservableObject
         // the delegate and injects it here; a default that builds a real connector
         // hides a missing registration behind a live call to somebody's board.
         _gatewayFactory = gatewayFactory
-            ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
-        // Not OsCredentialStore.ForThisPlatform(). The composition root registers
-        // the platform's store and injects it here; this fallback is for a view
-        // model built outside the container, and it must be the *empty* store
-        // rather than the real one. Reaching for the keychain from a default
-        // constructor meant a missing registration still worked, and a test that
-        // should have used no store quietly read the developer's own secrets —
-        // the failure would only ever have shown up as a prompt nobody expected.
-        _credentialStore = credentialStore
-            ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
+                          ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
+        _credentials = new CredentialSession(credentialStore);
         _recorder = recorder;
         _redaction = redaction;
         _diagnostics = diagnostics ?? NullDiagnostics.Instance;
@@ -191,6 +132,28 @@ public sealed partial class PlanViewModel : ObservableObject
         Outcomes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasOutcomes));
         Notes.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HasNotes));
     }
+
+    /// <summary>
+    ///     Which credential store this gate is actually using. Safe to show — the name
+    ///     never carries a secret — and it is what lets a test prove the composition
+    ///     root's store reached here rather than one built on the spot (ABSD-106).
+    /// </summary>
+    public string CredentialStoreName => _credentials.StoreName;
+
+    /// <summary>
+    ///     Set by the shell: returns true while the editor holds unsaved edits. A
+    ///     Plan is computed from the backlog file, so edits that exist only in the
+    ///     buffer must not be planned or applied as if they were on disk.
+    /// </summary>
+    public Func<bool>? UnsavedEditsCheck { get; set; }
+
+    /// <summary>
+    ///     True when the backlog file has been changed on disk since the profile was
+    ///     opened. A Plan is computed from what this app last read, so planning
+    ///     against a file somebody else has since rewritten would review one text and
+    ///     write another (ABSD-504, PRD-AC-15).
+    /// </summary>
+    public Func<bool>? StaleProfileCheck { get; set; }
 
 
     public ObservableCollection<PlanRow> Rows { get; } = [];
@@ -213,28 +176,6 @@ public sealed partial class PlanViewModel : ObservableObject
 
     public bool IsResyncTasks => Command == PlanCommand.ResyncTasks;
 
-    /// <summary>
-    ///     Every command the surface offers, with the scope and sync-chain flag FSD
-    ///     §3.3 requires beside each. Audit is not here: it writes nothing and has
-    ///     its own read-only section (ABSD-306), so putting it behind a Plan/Apply
-    ///     gate would imply it could write.
-    /// </summary>
-    public IReadOnlyList<PlanCommandOption> Commands { get; } =
-    [
-        new(PlanCommand.Import, "Import", "Epics and Issues missing from the board", InSyncChain: true),
-        new(PlanCommand.Resync, "Resync", "Titles and descriptions of every Epic and Issue", InSyncChain: true),
-        new(PlanCommand.ResyncTasks, "Resync tasks", "Each Issue's child Tasks, or one Issue's",
-            InSyncChain: true, NeedsCode: true),
-        new(PlanCommand.Dedup, "Dedup", "Every duplicate work item on the board", InSyncChain: false),
-        new(PlanCommand.Sprints, "Sprints", "The configured iterations and the items in them",
-            InSyncChain: false, SupportsIncludeTasks: true, SupportsAssignOnly: true),
-        new(PlanCommand.Assign, "Assign", "Each Issue's owner, from the profile's assignees",
-            InSyncChain: false, SupportsIncludeTasks: true, SupportsOnlyUnassigned: true),
-        new(PlanCommand.CloseChildren, "Close children", "Open descendants of anything already Done",
-            InSyncChain: false, SupportsAssignFromParent: true),
-        new(PlanCommand.SyncOne, "Sync one", "Exactly one Issue, and one sprint for it",
-            InSyncChain: false, NeedsCode: true, NeedsSprint: true),
-    ];
 
     /// <summary>
     ///     Settable so the selector list can bind two-way against it. Assigning it
@@ -251,6 +192,8 @@ public sealed partial class PlanViewModel : ObservableObject
     public bool NeedsCode => SelectedCommand.NeedsCode;
 
     public bool NeedsSprint => SelectedCommand.NeedsSprint;
+
+    public IReadOnlyList<PlanCommandOption> Commands { get; } = PlanCommandCatalog.All;
 
     public bool HasOptions => SelectedCommand.HasOptions;
 
@@ -317,10 +260,7 @@ public sealed partial class PlanViewModel : ObservableObject
     /// <summary>Reads the board and computes the diff. Issues no write.</summary>
     public async Task GenerateAsync(BacklogWorkspace workspace, CancellationToken cancellationToken = default)
     {
-        if (BlockedByUnsavedEdits("generating a Plan"))
-        {
-            return;
-        }
+        if (BlockedByUnsavedEdits("generating a Plan")) return;
 
         var token = await ResolveTokenAsync(workspace.Config, cancellationToken).ConfigureAwait(true);
         if (token is null)
@@ -408,246 +348,21 @@ public sealed partial class PlanViewModel : ObservableObject
                 config, snapshot, markdown, IncludeTasks, OnlyUnassigned),
             PlanCommand.CloseChildren => PlanBuilder.BuildCloseChildren(
                 config, snapshot, markdown, AssignFromParent),
-            _ => PlanBuilder.BuildSyncOne(config, items, snapshot, markdown, IssueCode, SprintName),
+            _ => PlanBuilder.BuildSyncOne(config, items, snapshot, markdown, IssueCode, SprintName)
         };
     }
 
     /// <summary>
-    ///     Opens the confirmation step. It never writes anything itself.
-    ///     PRD-AC-03: malformed backlog markup blocks Apply before a confirmation is
-    ///     ever offered. The workspace carries the offline audit total, so the gate
-    ///     reads the same number the tree badges and the problems card show.
-    /// </summary>
-    public void RequestApply(BacklogWorkspace? workspace)
-    {
-        if (Plan?.HasWork != true) return;
-
-        if (workspace is { MarkupProblemCount: > 0 } blocked)
-        {
-            ErrorText = blocked.MarkupProblemCount == 1
-                ? "The backlog has 1 markup problem. Fix it — check-html would fail too — then generate the Plan again. (markup.invalid)"
-                : $"The backlog has {blocked.MarkupProblemCount} markup problems. Fix them — check-html would fail too — then generate the Plan again. (markup.invalid)";
-            StatusText = "Apply is blocked until the markup problems are fixed.";
-            IsConfirming = false;
-            return;
-        }
-
-        IsConfirming = true;
-    }
-
-    public void CancelApply()
-    {
-        IsConfirming = false;
-    }
-
-    /// <summary>
-    ///     Executes the confirmed Plan. The fresh board read is the staleness check
-    ///     only — the rows applied are the reviewed ones, never recomputed from it.
-    ///     The markup gate runs again here: the confirmation dialog is not the only
-    ///     line of defence, so removing one still leaves the other.
-    /// </summary>
-    public async Task ApplyConfirmedAsync(BacklogWorkspace workspace, CancellationToken cancellationToken = default)
-    {
-        if (Plan is not { } plan || !IsConfirming) return;
-
-        if (BlockedByUnsavedEdits("applying"))
-        {
-            return;
-        }
-
-        if (workspace.MarkupProblemCount > 0)
-        {
-            ErrorText =
-                $"The backlog has {workspace.MarkupProblemCount} markup problem(s). Fix them before applying. (markup.invalid)";
-            StatusText = "Apply refused.";
-            IsConfirming = false;
-            return;
-        }
-
-        var token = await ResolveTokenAsync(workspace.Config, cancellationToken).ConfigureAwait(true);
-        if (token is null)
-        {
-            ErrorText = CredentialStatus;
-            return;
-        }
-
-        IsBusy = true;
-        IsConfirming = false;
-        ErrorText = null;
-        Outcomes.Clear();
-        StatusText = "Applying…";
-
-        try
-        {
-            var gateway = _gatewayFactory(token);
-            try
-            {
-                var fresh = await gateway.ReadAsync(workspace.Config, cancellationToken);
-                if (fresh.IsFailure)
-                {
-                    ErrorText = $"{fresh.Error!.SafeMessage} ({fresh.Error.Code})";
-                    StatusText = "Could not verify the board before applying.";
-                    _diagnostics.OperationFailed("apply", fresh.Error);
-                    return;
-                }
-
-                var currentBacklog = PlanBuilder.FingerprintBacklog(workspace.Markdown);
-
-                // The run is opened before the first write and closed after the
-                // last, so an app that dies mid-Apply leaves an open run — which
-                // is the honest record of what happened, and the one a user comes
-                // to the History view looking for.
-                var startedAt = DateTimeOffset.UtcNow;
-                var startedApplying = Stopwatch.GetTimestamp();
-                if (_recorder is { } recorder)
-                {
-                    await recorder.BeginAsync(
-                        workspace.ProfileKey, plan.Command, startedAt, cancellationToken);
-                }
-
-                // Two observers, because they need opposite things. The list is
-                // bound, so it must be touched on the UI thread, which is what
-                // Progress<T> is for. The recorder must not be: Progress<T> posts
-                // to the dispatcher and returns, so a callback that started the
-                // history write would not have run yet when the run is closed
-                // below — and a completed run refuses outcomes, silently dropping
-                // the rows PRD-AC-08 promises. Recording therefore happens inline
-                // on the thread that reported the outcome, which puts the write on
-                // the recorder's chain before ApplyAsync returns.
-                var ui = new Progress<ApplyOutcome>(Outcomes.Add);
-                var progress = new RecordingProgress(ui, _recorder, cancellationToken);
-
-                // Before the first round trip, so a process that dies mid-Apply
-                // still leaves the record that a write was in flight.
-                _diagnostics.ApplyStarted(plan);
-
-                var report = await ApplyExecutor.ApplyAsync(
-                    gateway, workspace.Config, plan,
-                    currentBacklog, fresh.Value.Fingerprint,
-                    progress, cancellationToken);
-
-                if (report.IsFailure)
-                {
-                    ErrorText = $"{report.Error!.SafeMessage} ({report.Error.Code})";
-                    StatusText = "Apply refused.";
-                    _diagnostics.OperationFailed("apply", report.Error);
-
-                    // Refused before the first write, so there is no run to close.
-                    // Abandoning leaves the opened row unfinished rather than
-                    // claiming a clean end to something that never ran.
-                    _recorder?.Abandon();
-
-                    // The approved Plan no longer describes the board.
-                    Plan = null;
-                    Rows.Clear();
-                    return;
-                }
-
-                if (_recorder is { } closing)
-                {
-                    await closing.CompleteAsync(
-                        report.Value.Summary, DateTimeOffset.UtcNow, cancellationToken);
-                }
-
-                _diagnostics.ApplyFinished(
-                    plan, report.Value, Stopwatch.GetElapsedTime(startedApplying));
-
-                StatusText = report.Value.Summary;
-
-                // The board has moved; a further write needs a fresh Plan.
-                Plan = null;
-                Rows.Clear();
-            }
-            finally
-            {
-                (gateway as IDisposable)?.Dispose();
-            }
-        }
-        finally
-        {
-            IsBusy = false;
-        }
-    }
-
-    /// <summary>
-    ///     The unsaved-edits half of the gate. Reports the refusal and returns true
-    ///     when the editor holds work the file does not — the same file every Plan
-    ///     and every Apply fingerprint is computed from.
-    /// </summary>
-    private bool BlockedByUnsavedEdits(string action)
-    {
-        if (UnsavedEditsCheck?.Invoke() == true)
-        {
-            ErrorText =
-                "The backlog has unsaved edits. Save them first — a Plan is computed from "
-                + "the file, and the file is the source of truth. (backlog.unsaved)";
-            StatusText = $"Save the backlog before {action}.";
-            return true;
-        }
-
-        // Checked second because it is the rarer of the two, and because a user with
-        // unsaved edits needs to hear about those first — reloading would discard
-        // them, so telling them to reload before telling them they have work in the
-        // buffer would invite exactly the wrong action (ABSD-504).
-        if (StaleProfileCheck?.Invoke() == true)
-        {
-            ErrorText =
-                "The backlog file has changed on disk since this profile was opened. "
-                + "Reload before continuing — otherwise the Plan would be computed from "
-                + "text this app no longer holds. (backlog.stale)";
-            StatusText = $"Reload the backlog before {action}.";
-            return true;
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    ///     The sources this profile's token can come from, in order: one typed this
-    ///     session, then the operating system's credential store, then the CLI's own
-    ///     environment variable and token file.
-    /// </summary>
-    private PatResolver ResolverFor(BoardConfig config)
-    {
-        var sources = new List<IPatSource>();
-        if (!string.IsNullOrWhiteSpace(SessionToken))
-        {
-            sources.Add(new SessionPatSource(SessionToken));
-        }
-
-        sources.AddRange(PatResolver.ForConfig(config, _credentialStore).Sources);
-        return new PatResolver(sources);
-    }
-
-    /// <summary>
-    ///     Resolves the token and describes the attempt. Each source is read exactly
-    ///     once; the status names the winning source without re-reading anything, and
-    ///     never the value it held.
-    /// </summary>
-    private string? ResolveToken(BoardConfig config)
-    {
-        var resolver = ResolverFor(config);
-        return Adopt(resolver, resolver.ResolveDetailed());
-    }
-
-    /// <summary>
-    ///     The same resolution, off the calling thread. Reading the operating
-    ///     system's credential store spawns a child process — and on a locked
-    ///     keychain that child blocks on an unlock prompt for up to its timeout — so
-    ///     on the render thread it freezes the window, which is the very hazard
-    ///     <see cref="ProfileLoader" /> moves the file read off that thread to avoid.
+    ///     Resolves the token and publishes the badge. Each source is read exactly
+    ///     once, off the calling thread; the status names the winning source and any
+    ///     source that failed, never the value it held.
     /// </summary>
     private async Task<string?> ResolveTokenAsync(BoardConfig config, CancellationToken cancellationToken)
     {
-        var resolver = ResolverFor(config);
-        var resolution = await Task.Run(resolver.ResolveDetailed, cancellationToken).ConfigureAwait(true);
-        return Adopt(resolver, resolution);
-    }
+        var (resolver, resolution) = await _credentials
+            .ResolveAsync(config, SessionToken, cancellationToken).ConfigureAwait(true);
 
-    /// <summary>Publishes one resolution to the bound state. The only writer of both.</summary>
-    private string? Adopt(PatResolver resolver, PatResolution resolution)
-    {
-        CredentialStatus = Describe(resolver, resolution);
+        CredentialStatus = CredentialSession.Describe(resolver, resolution);
         HasCredential = resolution.Found;
 
         // Registering the resolved token is what makes the diagnostics log safe
@@ -655,10 +370,7 @@ public sealed partial class PlanViewModel : ObservableObject
         // backstop in DiagnosticRedaction is the fallback, not the guarantee —
         // this is the guarantee, and it has to happen here because this is the
         // only place in the application that ever holds the value.
-        if (resolution.Token is { Length: > 0 } token)
-        {
-            _redaction?.Register(token);
-        }
+        if (resolution.Token is { Length: > 0 } token) _redaction?.Register(token);
 
         return resolution.Token;
     }
@@ -679,48 +391,5 @@ public sealed partial class PlanViewModel : ObservableObject
         }
 
         await ResolveTokenAsync(config, cancellationToken).ConfigureAwait(true);
-    }
-
-    /// <summary>
-    ///     What the badge says. A source that failed is named separately from one that
-    ///     simply held nothing: "checked and empty" and "checked and refused" call for
-    ///     different fixes, and collapsing them sends the user to the wrong one.
-    /// </summary>
-    private static string Describe(PatResolver resolver, PatResolution resolution)
-    {
-        var trouble = resolution.HasFailures
-            ? " " + string.Join(" ", resolution.Failures.Select(f => $"{f.SafeMessage} ({f.Code})"))
-            : string.Empty;
-
-        return resolution.Found
-            ? $"Token resolved from {resolution.SourceName}.{trouble}"
-            : $"No personal access token found. Checked {resolver.DescribeSources()}.{trouble}";
-    }
-
-    /// <summary>
-    ///     Puts each outcome on the history recorder's queue immediately, then hands
-    ///     it to the bound collection through the dispatcher.
-    ///
-    ///     The order matters and the synchrony matters. Apply reports an outcome from
-    ///     whichever worker finished the write, and closes the run as soon as the last
-    ///     one returns. Anything that deferred the recording — a Progress&lt;T&gt;, a
-    ///     Task.Run — would still be waiting to start when the run closed, and the
-    ///     store refuses outcomes for a completed run: the rows would be dropped with
-    ///     nothing but a diagnostics line to say so.
-    /// </summary>
-    private sealed class RecordingProgress(
-        IProgress<ApplyOutcome> ui, ApplyHistoryRecorder? recorder, CancellationToken cancellationToken)
-        : IProgress<ApplyOutcome>
-    {
-        public void Report(ApplyOutcome value)
-        {
-            // Fire-and-forget, but already queued: the recorder chains this write
-            // internally and CompleteAsync awaits that chain. Recording never paces
-            // the board writes, and it swallows its own failures rather than
-            // turning a support problem into a failed Apply.
-            _ = recorder?.RecordAsync(value, DateTimeOffset.UtcNow, cancellationToken);
-
-            ui.Report(value);
-        }
     }
 }

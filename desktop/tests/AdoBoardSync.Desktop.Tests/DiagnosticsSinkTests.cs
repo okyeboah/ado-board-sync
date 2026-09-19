@@ -6,14 +6,15 @@ using AdoBoardSync.Core.Diagnostics;
 using AdoBoardSync.Core.Planning;
 using AdoBoardSync.Core.Results;
 using AdoBoardSync.Infrastructure.Diagnostics;
+using AdoBoardSync.TestKit;
 
 namespace AdoBoardSync.Desktop.Tests;
 
 /// <summary>
-/// The ABSD-507 sinks against a real disk. Two promises need a filesystem to prove:
-/// that the log rotates instead of growing without bound, and that a diagnostics
-/// failure stays a diagnostics failure — a sink that threw would replace the error
-/// the user was actually trying to understand with one about logging.
+///     The ABSD-507 sinks against a real disk. Two promises need a filesystem to prove:
+///     that the log rotates instead of growing without bound, and that a diagnostics
+///     failure stays a diagnostics failure — a sink that threw would replace the error
+///     the user was actually trying to understand with one about logging.
 /// </summary>
 public class DiagnosticsSinkTests
 {
@@ -25,22 +26,17 @@ public class DiagnosticsSinkTests
         InTempDirectory(directory =>
         {
             var sink = new JsonLinesDiagnosticsSink(
-                directory, new DiagnosticRedaction(), maximumFileBytes: 400, maximumFiles: 3);
+                directory, new DiagnosticRedaction(), 400, 3);
 
-            for (var i = 0; i < 20; i++)
-            {
-                sink.Write(Info($"event number {i}"));
-            }
+            for (var i = 0; i < 20; i++) sink.Write(Info($"event number {i}"));
 
             Assert.True(File.Exists(sink.CurrentFilePath));
             Assert.True(File.Exists(Path.Combine(directory, DiagnosticsPaths.ArchiveFileName(1))));
 
             foreach (var file in Directory.GetFiles(directory, DiagnosticsPaths.LogFileSearchPattern))
-            {
                 Assert.True(
                     new FileInfo(file).Length <= 400,
                     $"{Path.GetFileName(file)} grew past the cap it was given.");
-            }
 
             Assert.Equal(0, sink.FailedWrites);
         });
@@ -52,12 +48,9 @@ public class DiagnosticsSinkTests
         InTempDirectory(directory =>
         {
             var sink = new JsonLinesDiagnosticsSink(
-                directory, new DiagnosticRedaction(), maximumFileBytes: 200, maximumFiles: 3);
+                directory, new DiagnosticRedaction(), 200, 3);
 
-            for (var i = 0; i < 200; i++)
-            {
-                sink.Write(Info($"event number {i}"));
-            }
+            for (var i = 0; i < 200; i++) sink.Write(Info($"event number {i}"));
 
             var files = Directory.GetFiles(directory, DiagnosticsPaths.LogFileSearchPattern);
 
@@ -96,11 +89,9 @@ public class DiagnosticsSinkTests
             var target = Path.Combine(directory, "logs");
             Directory.CreateDirectory(target);
             if (!TryDenyNewFiles(target))
-            {
                 // Windows has no Unix mode, and root ignores it. Nothing to assert
                 // here rather than something asserted loosely.
                 return;
-            }
 
             try
             {
@@ -238,7 +229,7 @@ public class DiagnosticsSinkTests
                     DestinationPath = destination,
                     LogDirectory = logs,
                     CredentialStoreAvailable = true,
-                    CredentialStoreName = "macOS Keychain",
+                    CredentialStoreName = "macOS Keychain"
                 },
                 new DiagnosticRedaction());
 
@@ -272,7 +263,7 @@ public class DiagnosticsSinkTests
                     DestinationPath = named,
                     LogDirectory = Path.Combine(directory, "logs"),
                     Org = "contoso",
-                    Project = "Payments",
+                    Project = "Payments"
                 },
                 redaction);
 
@@ -280,7 +271,7 @@ public class DiagnosticsSinkTests
                 new DiagnosticsBundleRequest
                 {
                     DestinationPath = anonymous,
-                    LogDirectory = Path.Combine(directory, "logs"),
+                    LogDirectory = Path.Combine(directory, "logs")
                 },
                 redaction);
 
@@ -342,7 +333,7 @@ public class DiagnosticsSinkTests
                 new DiagnosticsBundleRequest
                 {
                     DestinationPath = Path.Combine(blocked, "bundle.zip"),
-                    LogDirectory = Path.Combine(directory, "logs"),
+                    LogDirectory = Path.Combine(directory, "logs")
                 },
                 new DiagnosticRedaction());
 
@@ -352,46 +343,60 @@ public class DiagnosticsSinkTests
         });
     }
 
-    private static DiagnosticEvent Info(string message) => new()
+    private static DiagnosticEvent Info(string message)
     {
-        Timestamp = DateTimeOffset.UnixEpoch,
-        Level = DiagnosticLevel.Info,
-        Category = "plan",
-        Message = message,
-    };
+        return new DiagnosticEvent
+        {
+            Timestamp = DateTimeOffset.UnixEpoch,
+            Level = DiagnosticLevel.Info,
+            Category = "plan",
+            Message = message
+        };
+    }
 
-    private static Plan SamplePlan() => new()
+    private static Plan SamplePlan()
     {
-        Command = PlanCommand.Import,
-        Rows =
-        [
-            new PlanRow
-            {
-                Operation = PlanOperation.Create,
-                Level = BacklogLevel.Issue,
-                Title = "A title that has no business being in a support bundle",
-                Code = "PROJ-1",
-            },
-            new PlanRow
-            {
-                Operation = PlanOperation.Create,
-                Level = BacklogLevel.Issue,
-                Title = "Another",
-                Code = "PROJ-2",
-            },
-        ],
-        BacklogFingerprint = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-        BoardFingerprint = "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752",
-    };
+        return new Plan
+        {
+            Command = PlanCommand.Import,
+            Rows =
+            [
+                new PlanRow
+                {
+                    Operation = PlanOperation.Create,
+                    Level = BacklogLevel.Issue,
+                    Title = "A title that has no business being in a support bundle",
+                    Code = "PROJ-1"
+                },
+                new PlanRow
+                {
+                    Operation = PlanOperation.Create,
+                    Level = BacklogLevel.Issue,
+                    Title = "Another",
+                    Code = "PROJ-2"
+                }
+            ],
+            BacklogFingerprint = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
+            BoardFingerprint = "60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752"
+        };
+    }
 
-    private static ApplyOutcome Failed(PlanRow row) => new(row, Succeeded: false, BoardId: null, "rejected");
+    private static ApplyOutcome Failed(PlanRow row)
+    {
+        return new ApplyOutcome(row, false, null, "rejected");
+    }
 
-    private static ApplyOutcome Succeeded(PlanRow row) => new(row, Succeeded: true, BoardId: 7, "created");
+    private static ApplyOutcome Succeeded(PlanRow row)
+    {
+        return new ApplyOutcome(row, true, 7, "created");
+    }
 
-    private static Dictionary<string, string> Data(string line) =>
-        JsonDocument.Parse(line).RootElement.GetProperty("data").EnumerateObject()
+    private static Dictionary<string, string> Data(string line)
+    {
+        return JsonDocument.Parse(line).RootElement.GetProperty("data").EnumerateObject()
             .ToDictionary(property => property.Name, property => property.Value.GetString() ?? string.Empty,
                 StringComparer.Ordinal);
+    }
 
     private static string ReadEntry(ZipArchive archive, string entryName)
     {
@@ -413,7 +418,7 @@ public class DiagnosticsSinkTests
         {
             try
             {
-                Directory.Delete(directory, recursive: true);
+                Directory.Delete(directory, true);
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
@@ -425,16 +430,13 @@ public class DiagnosticsSinkTests
     }
 
     /// <summary>
-    /// Stops the sink from creating a file, the closest a test can get to a log
-    /// directory the user cannot write. Returns false where the environment cannot
-    /// express that, so the caller skips rather than asserting nothing.
+    ///     Stops the sink from creating a file, the closest a test can get to a log
+    ///     directory the user cannot write. Returns false where the environment cannot
+    ///     express that, so the caller skips rather than asserting nothing.
     /// </summary>
     private static bool TryDenyNewFiles(string directory)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return false;
-        }
+        if (OperatingSystem.IsWindows()) return false;
 
         new DirectoryInfo(directory).UnixFileMode = UnixFileMode.UserRead | UnixFileMode.UserExecute;
 
@@ -454,12 +456,32 @@ public class DiagnosticsSinkTests
 
     private static void RestoreWriting(string directory)
     {
-        if (OperatingSystem.IsWindows())
-        {
-            return;
-        }
+        if (OperatingSystem.IsWindows()) return;
 
         new DirectoryInfo(directory).UnixFileMode =
             UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+    }
+
+    [Fact]
+    public void AnInjectedTimeProviderStampsTheEventNotTheSystemClock()
+    {
+        // The extensions default to the system clock so callers never thread a
+        // clock through just to stamp an event; this is the seam a timestamp
+        // assertion uses instead of sleeping around a real clock.
+        var diagnostics = new InMemoryDiagnostics();
+        var fixedTime = new DateTimeOffset(2026, 9, 18, 12, 0, 0, TimeSpan.Zero);
+
+        diagnostics.OperationFailed(
+            "plan", Error.NotFound("plan.failed", "it failed"), new FixedTime(fixedTime));
+
+        Assert.Equal(fixedTime, Assert.Single(diagnostics.Events).Timestamp);
+    }
+
+    private sealed class FixedTime(DateTimeOffset now) : TimeProvider
+    {
+        public override DateTimeOffset GetUtcNow()
+        {
+            return now;
+        }
     }
 }

@@ -10,23 +10,22 @@ using AdoBoardSync.TestKit;
 namespace AdoBoardSync.Desktop.Tests;
 
 /// <summary>
-/// The composition root and the dependency direction it exists to protect
-/// (ABSD-106).
-///
-/// The port sweep below is built by reflecting over Core rather than by listing
-/// the registrations, because a test written the other way round can only ever
-/// confirm what is already registered: add a port to Core, bind it nowhere, and
-/// an enumeration of the container still passes while the first caller that needs
-/// it goes back to constructing its own adapter. Discovery has to come from the
-/// side that declares the ports.
-///
-/// The direction tests read the compiled assembly references instead of trusting
-/// CONVENTIONS rule 3's prose. A layering rule that lives only in a document is
-/// enforced by whoever happens to review the pull request.
+///     The composition root and the dependency direction it exists to protect
+///     (ABSD-106).
+///     The port sweep below is built by reflecting over Core rather than by listing
+///     the registrations, because a test written the other way round can only ever
+///     confirm what is already registered: add a port to Core, bind it nowhere, and
+///     an enumeration of the container still passes while the first caller that needs
+///     it goes back to constructing its own adapter. Discovery has to come from the
+///     side that declares the ports.
+///     The direction tests read the compiled assembly references instead of trusting
+///     CONVENTIONS rule 3's prose. A layering rule that lives only in a document is
+///     enforced by whoever happens to review the pull request.
 /// </summary>
 public class CompositionRootTests
 {
     private static readonly Assembly CoreAssembly = typeof(Error).Assembly;
+
     private static readonly Assembly InfrastructureAssembly = typeof(FileSystemBacklogFileStore).Assembly;
     private static readonly Assembly DesktopAssembly = typeof(AppServices).Assembly;
 
@@ -34,12 +33,12 @@ public class CompositionRootTests
     private static readonly string[] PortSuffixes = ["Store", "Reader", "Writer", "Source"];
 
     /// <summary>
-    /// The ports the container deliberately does not bind, and why each one is
-    /// here. Every entry costs the sweep a port, so each needs a reason that would
-    /// survive being read aloud — and each is checked back against Core on every
-    /// run, so a misspelling fails the sweep instead of quietly widening it, and a
-    /// port that later gains a binding is reported by
-    /// <see cref="AnExcludedPortThatGainsAnAdapterMustLeaveTheExclusionSet" />.
+    ///     The ports the container deliberately does not bind, and why each one is
+    ///     here. Every entry costs the sweep a port, so each needs a reason that would
+    ///     survive being read aloud — and each is checked back against Core on every
+    ///     run, so a misspelling fails the sweep instead of quietly widening it, and a
+    ///     port that later gains a binding is reported by
+    ///     <see cref="AnExcludedPortThatGainsAnAdapterMustLeaveTheExclusionSet" />.
     /// </summary>
     private static readonly string[] PortsTheContainerDoesNotBind =
     [
@@ -47,8 +46,20 @@ public class CompositionRootTests
         // ordered list of these — an environment variable name, a token file path,
         // a token typed this session — so every implementation takes a constructor
         // argument the container cannot supply and no single binding is correct.
-        "IPatSource",
+        "IPatSource"
     ];
+
+    /// <summary>
+    ///     The guarantee behind the assembly's module initializer: no test, however it
+    ///     builds the container, can land writes in the developer's own data directory.
+    ///     The root is baked on first touch, so if the override had not been set before
+    ///     any adapter was constructed, this would already read the real user path.
+    /// </summary>
+    [Fact]
+    public void TestDataResolvesUnderTheHarnessOverrideNotTheUsersProfile()
+    {
+        Assert.Contains("absd-tests-", LocalDataPaths.Root, StringComparison.Ordinal);
+    }
 
     [Fact]
     public void EveryPortCoreDeclaresIsBoundInTheCompositionRootRatherThanBuiltByItsCaller()
@@ -170,18 +181,31 @@ public class CompositionRootTests
         Assert.DoesNotContain("PackageReference", csproj, StringComparison.Ordinal);
     }
 
-    private static IReadOnlyList<Type> CorePorts() =>
-        [.. CoreAssembly.GetExportedTypes()
-            .Where(type => type.IsInterface
-                && type.Name.StartsWith('I')
-                && PortSuffixes.Any(suffix => type.Name.EndsWith(suffix, StringComparison.Ordinal)))
-            .OrderBy(type => type.Name, StringComparer.Ordinal)];
+    private static IReadOnlyList<Type> CorePorts()
+    {
+        return
+        [
+            .. CoreAssembly.GetExportedTypes()
+                .Where(type => type.IsInterface
+                               && type.Name.StartsWith('I')
+                               && PortSuffixes.Any(suffix => type.Name.EndsWith(suffix, StringComparison.Ordinal)))
+                .OrderBy(type => type.Name, StringComparer.Ordinal)
+        ];
+    }
 
-    private static IReadOnlyList<string> ReferencedNames(Assembly assembly) =>
-        [.. assembly.GetReferencedAssemblies()
-            .Select(reference => reference.Name)
-            .OfType<string>()
-            .OrderBy(name => name, StringComparer.Ordinal)];
+    private static IReadOnlyList<string> ReferencedNames(Assembly assembly)
+    {
+        return
+        [
+            .. assembly.GetReferencedAssemblies()
+                .Select(reference => reference.Name)
+                .OfType<string>()
+                .OrderBy(name => name, StringComparer.Ordinal)
+        ];
+    }
 
-    private static string NameOf(Assembly assembly) => assembly.GetName().Name ?? assembly.ToString();
+    private static string NameOf(Assembly assembly)
+    {
+        return assembly.GetName().Name ?? assembly.ToString();
+    }
 }

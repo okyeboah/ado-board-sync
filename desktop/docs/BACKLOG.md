@@ -65,6 +65,12 @@ Its primary gate is an automated launch smoke test, because a mistyped `StaticRe
 
 **Depends on:** ABSD-104. Full acceptance criteria: issue #27.
 
+### ABSD-113 · Decompose the shell view model
+
+**Outcome:** `MainWindowViewModel` is orchestration only: the tree and its counts live in a `BacklogTreeViewModel`, the profile's open/reload/staleness life in a `ProfileSession`, the credential chain both gate surfaces walk in a `CredentialSession`, and no source file in the solution exceeds the 500-line rule.
+
+**Depends on:** ABSD-104, ABSD-203, ABSD-502.
+
 ## Epic ABSD-200: Backlog engine
 
 ### ABSD-201 · Port backlog parser

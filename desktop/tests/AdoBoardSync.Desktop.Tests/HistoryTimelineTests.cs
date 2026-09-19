@@ -1,4 +1,3 @@
-using AdoBoardSync.Core.Agents;
 using AdoBoardSync.Core.Backlog;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Operations;
@@ -10,153 +9,43 @@ using AdoBoardSync.Desktop.ViewModels;
 namespace AdoBoardSync.Desktop.Tests;
 
 /// <summary>
-/// Pins the Apply recorder (ABSD-501's integration) and the History timeline
-/// (ABSD-508).
-///
-/// Two rules matter more than the rest. Recording must never be able to fail the
-/// Apply it is recording — a broken history is a support problem, an aborted
-/// write is a correctness one. And the timeline must never show one profile's
-/// runs while another profile is open.
+///     Pins the Apply recorder (ABSD-501's integration) and the History timeline
+///     (ABSD-508).
+///     Two rules matter more than the rest. Recording must never be able to fail the
+///     Apply it is recording — a broken history is a support problem, an aborted
+///     write is a correctness one. And the timeline must never show one profile's
+///     runs while another profile is open.
 /// </summary>
-public class HistoryTimelineTests
+public partial class HistoryTimelineTests
 {
     private const string Markdown = "## Epic 1\n";
 
-    private static BoardConfig Config(string org = "o", string project = "p") =>
-        BoardConfig.Parse(
+    private static readonly DateTimeOffset Noon =
+        new(2026, 9, 3, 12, 0, 0, TimeSpan.Zero);
+
+    private static BoardConfig Config(string org = "o", string project = "p")
+    {
+        return BoardConfig.Parse(
             $$"""{"org":"{{org}}","project":"{{project}}","code_prefix":"PROJ","board_file":"backlog.md"}""",
             Path.GetTempPath()).Value;
+    }
 
-    private static BacklogWorkspace Workspace(BoardConfig config) =>
-        new(null, config, "backlog.md", Markdown, [], 0,
+    private static BacklogWorkspace Workspace(BoardConfig config)
+    {
+        return new BacklogWorkspace(null, config, "backlog.md", Markdown, [], 0,
             FileStamp.For(DateTimeOffset.UnixEpoch, Markdown));
+    }
 
-    private static ApplyOutcome Outcome(bool succeeded, string title = "PROJ-101 · A") =>
-        new(new PlanRow
+    private static ApplyOutcome Outcome(bool succeeded, string title = "PROJ-101 · A")
+    {
+        return new ApplyOutcome(new PlanRow
         {
             Operation = PlanOperation.Create,
             Level = BacklogLevel.Issue,
             Title = title,
-            Code = "PROJ-101",
+            Code = "PROJ-101"
         }, succeeded, succeeded ? 42 : null, succeeded ? "Created #42" : "That token was rejected.");
-
-    /// <summary>An in-memory history. Fails on demand, so the recorder's promise
-    /// that a broken store cannot break an Apply is testable.</summary>
-    private sealed class FakeHistory : IOperationHistory
-    {
-        private long _nextId = 1;
-
-        public List<OperationRun> Runs { get; } = [];
-
-        public List<OperationItemOutcome> Outcomes { get; } = [];
-
-        public Error? BeginError { get; set; }
-
-        public Error? RecordError { get; set; }
-
-        public Error? CompleteError { get; set; }
-
-        public Error? ListError { get; set; }
-
-        /// <summary>Makes a write take long enough that closing the run could race it.</summary>
-        public TimeSpan WriteDelay { get; set; }
-
-        private readonly Lock _gate = new();
-
-        public Task<Result<long>> BeginRunAsync(
-            string profileKey, string command, DateTimeOffset startedAt, CancellationToken cancellationToken = default)
-        {
-            if (BeginError is { } error)
-            {
-                return Task.FromResult<Result<long>>(error);
-            }
-
-            var id = _nextId++;
-            Runs.Add(new OperationRun
-            {
-                Id = id,
-                ProfileKey = profileKey,
-                Command = command,
-                StartedAt = startedAt,
-            });
-
-            return Task.FromResult<Result<long>>(id);
-        }
-
-        public async Task<Result<bool>> RecordOutcomeAsync(
-            long runId, OperationItemOutcome outcome, CancellationToken cancellationToken = default)
-        {
-            if (RecordError is { } error)
-            {
-                return error;
-            }
-
-            if (WriteDelay > TimeSpan.Zero)
-            {
-                await Task.Delay(WriteDelay, cancellationToken);
-            }
-
-            // The list is not thread-safe; the recorder serialises its writes, and
-            // this lock is what would expose it if it stopped doing so.
-            lock (_gate)
-            {
-                Outcomes.Add(outcome);
-            }
-
-            return true;
-        }
-
-        public Task<Result<bool>> CompleteRunAsync(
-            long runId, DateTimeOffset finishedAt, int succeeded, int failed, string summary,
-            CancellationToken cancellationToken = default)
-        {
-            if (CompleteError is { } error)
-            {
-                return Task.FromResult<Result<bool>>(error);
-            }
-
-            var index = Runs.FindIndex(r => r.Id == runId);
-            Runs[index] = Runs[index] with
-            {
-                FinishedAt = finishedAt,
-                Succeeded = succeeded,
-                Failed = failed,
-                Summary = summary,
-            };
-
-            return Task.FromResult<Result<bool>>(true);
-        }
-
-        public Task<Result<IReadOnlyList<OperationRun>>> ListRunsAsync(
-            string profileKey, int limit, CancellationToken cancellationToken = default)
-        {
-            if (ListError is { } error)
-            {
-                return Task.FromResult<Result<IReadOnlyList<OperationRun>>>(error);
-            }
-
-            OperationRun[] matching =
-            [
-                .. Runs.Where(r => r.ProfileKey == profileKey)
-                    .OrderByDescending(r => r.StartedAt)
-                    .Take(limit)
-            ];
-
-            return Task.FromResult<Result<IReadOnlyList<OperationRun>>>(matching);
-        }
-
-        public Task<Result<IReadOnlyList<OperationItemOutcome>>> ListOutcomesAsync(
-            long runId, CancellationToken cancellationToken = default)
-        {
-            OperationItemOutcome[] matching =
-                [.. Outcomes.Where(o => o.RunId == runId).OrderBy(o => o.Sequence)];
-
-            return Task.FromResult<Result<IReadOnlyList<OperationItemOutcome>>>(matching);
-        }
     }
-
-    private static readonly DateTimeOffset Noon =
-        new(2026, 9, 3, 12, 0, 0, TimeSpan.Zero);
 
     // -------------------------------------------------------------- recorder
 
@@ -204,7 +93,7 @@ public class HistoryTimelineTests
         // the recorder simply has nothing to write to.
         var history = new FakeHistory
         {
-            BeginError = Error.SourceFailure("history.unwritable", "The database is read-only."),
+            BeginError = Error.SourceFailure("history.unwritable", "The database is read-only.")
         };
 
         var recorder = new ApplyHistoryRecorder(history);
@@ -223,7 +112,7 @@ public class HistoryTimelineTests
     {
         var history = new FakeHistory
         {
-            RecordError = Error.SourceFailure("history.unwritable", "Disk full."),
+            RecordError = Error.SourceFailure("history.unwritable", "Disk full.")
         };
 
         var recorder = new ApplyHistoryRecorder(history);
@@ -311,289 +200,104 @@ public class HistoryTimelineTests
         Assert.Equal("Import", Assert.Single(timeline.Runs).Command);
     }
 
-    [Fact]
-    public async Task SwitchingProfileDoesNotLeaveThePreviousProfilesRunsOnScreen()
+    /// <summary>
+    ///     An in-memory history. Fails on demand, so the recorder's promise
+    ///     that a broken store cannot break an Apply is testable.
+    /// </summary>
+    private sealed class FakeHistory : IOperationHistory
     {
-        var history = new FakeHistory();
-        await history.BeginRunAsync("o/p", "Import", Noon);
+        private readonly Lock _gate = new();
+        private long _nextId = 1;
 
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
-        Assert.Single(timeline.Runs);
+        public List<OperationRun> Runs { get; } = [];
 
-        await timeline.LoadAsync(Workspace(Config("other", "board")));
+        public List<OperationItemOutcome> Outcomes { get; } = [];
 
-        Assert.Empty(timeline.Runs);
-        Assert.True(timeline.IsEmpty);
-    }
+        public Error? BeginError { get; set; }
 
-    [Fact]
-    public async Task RunsAreNewestFirst()
-    {
-        var history = new FakeHistory();
-        await history.BeginRunAsync("o/p", "Import", Noon);
-        await history.BeginRunAsync("o/p", "Resync", Noon.AddHours(1));
+        public Error? RecordError { get; set; }
 
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
+        public Error? CompleteError { get; set; }
 
-        Assert.Equal(["Resync", "Import"], timeline.Runs.Select(r => r.Command));
-    }
+        public Error? ListError { get; set; }
 
-    [Fact]
-    public async Task AnInterruptedRunIsShownAsInterruptedRatherThanHidden()
-    {
-        // The board may hold half of it, and that is precisely when someone looks.
-        var history = new FakeHistory();
-        await history.BeginRunAsync("o/p", "Import", Noon);
+        /// <summary>Makes a write take long enough that closing the run could race it.</summary>
+        public TimeSpan WriteDelay { get; set; }
 
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        var run = Assert.Single(timeline.Runs);
-        Assert.True(run.WasInterrupted);
-        Assert.Equal("!", run.Glyph);
-        Assert.Contains("Interrupted", run.Result);
-        Assert.Equal("unfinished", run.Duration);
-    }
-
-    [Fact]
-    public async Task OutcomesLoadOnlyWhenARunIsExpanded()
-    {
-        var history = new FakeHistory();
-        var recorder = new ApplyHistoryRecorder(history);
-        await recorder.BeginAsync("o/p", PlanCommand.Import, Noon);
-        await recorder.RecordAsync(Outcome(true), Noon);
-        await recorder.CompleteAsync("Applied 1 change.", Noon);
-
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        var run = Assert.Single(timeline.Runs);
-        Assert.False(run.HasOutcomes);
-
-        await timeline.ToggleAsync(run);
-
-        Assert.True(run.IsExpanded);
-        Assert.Equal("PROJ-101 · A", Assert.Single(run.Outcomes).Title);
-
-        // Collapsing and expanding again must not fetch or duplicate them.
-        await timeline.ToggleAsync(run);
-        await timeline.ToggleAsync(run);
-        Assert.Single(run.Outcomes);
-    }
-
-    [Fact]
-    public async Task AnUnreadableHistoryIsReportedWithItsTypedCode()
-    {
-        var history = new FakeHistory
+        public Task<Result<long>> BeginRunAsync(
+            string profileKey, string command, DateTimeOffset startedAt, CancellationToken cancellationToken = default)
         {
-            ListError = Error.SourceFailure("history.unreadable", "The database is locked."),
-        };
+            if (BeginError is { } error) return Task.FromResult<Result<long>>(error);
 
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
+            var id = _nextId++;
+            Runs.Add(new OperationRun
+            {
+                Id = id,
+                ProfileKey = profileKey,
+                Command = command,
+                StartedAt = startedAt
+            });
 
-        Assert.True(timeline.HasError);
-        Assert.Contains("history.unreadable", timeline.ErrorText);
-    }
-
-    [Fact]
-    public async Task AProfileWithNoRunsSaysSoRatherThanLookingBroken()
-    {
-        var timeline = new HistoryViewModel(new FakeHistory());
-
-        await timeline.LoadAsync(Workspace(Config()));
-
-        Assert.True(timeline.IsEmpty);
-        Assert.Contains("No Apply has run", timeline.StatusText);
-    }
-
-    [Fact]
-    public void ClearingTheTimelineEmptiesItAndForgetsTheProfile()
-    {
-        var timeline = new HistoryViewModel(new FakeHistory());
-
-        timeline.Clear();
-
-        Assert.Empty(timeline.Runs);
-        Assert.False(timeline.IsEmpty);
-    }
-
-    // ------------------------------------------------------------ ABSD-508 filters
-
-    [Fact]
-    public async Task TheCommandFilterNarrowsTheTimelineAndAllCommandsRestoresIt()
-    {
-        var history = new FakeHistory();
-        await history.BeginRunAsync("o/p", "Import", Noon);
-        await history.BeginRunAsync("o/p", "ResyncTasks", Noon.AddMinutes(1));
-
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        Assert.Equal(2, timeline.FilteredRuns.Count);
-        Assert.Equal(["All commands", "ResyncTasks", "Import"], timeline.CommandChoices);
-
-        timeline.SelectedCommand = "Import";
-        Assert.Equal(["Import"], timeline.FilteredRuns.Select(run => run.Command));
-        Assert.True(timeline.HasVisibleRuns);
-
-        timeline.SelectedCommand = "Audit";
-        Assert.Empty(timeline.FilteredRuns);
-        Assert.False(timeline.HasVisibleRuns);
-        Assert.True(timeline.HasRuns, "Filtering must not lose the loaded page.");
-
-        timeline.SelectedCommand = HistoryViewModel.AllCommands;
-        Assert.Equal(2, timeline.FilteredRuns.Count);
-    }
-
-    [Fact]
-    public async Task TheSpanFilterHidesRunsOlderThanItsLength()
-    {
-        var history = new FakeHistory();
-        await history.BeginRunAsync("o/p", "Import", DateTimeOffset.UtcNow - TimeSpan.FromDays(40));
-        await history.BeginRunAsync("o/p", "Import", DateTimeOffset.UtcNow - TimeSpan.FromHours(2));
-
-        var timeline = new HistoryViewModel(history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        timeline.SelectedSpan = HistorySpan.Week;
-        var visible = Assert.Single(timeline.FilteredRuns);
-        Assert.True(visible.Run.StartedAt > DateTimeOffset.UtcNow - TimeSpan.FromDays(7));
-
-        timeline.SelectedSpan = HistorySpan.All;
-        Assert.Equal(2, timeline.FilteredRuns.Count);
-    }
-
-    // ------------------------------------------------------------ ABSD-706 readback
-
-    private sealed class FakeAgentHistory : IAgentRunHistory
-    {
-        public List<AgentRunRecord> Runs { get; } = [];
-
-        public Task<Result<long>> RecordRunAsync(
-            AgentRunRecord record, CancellationToken cancellationToken = default)
-        {
-            Runs.Add(record);
-            return Task.FromResult<Result<long>>(Runs.Count);
+            return Task.FromResult<Result<long>>(id);
         }
 
-        public Task<Result<bool>> RecordVerdictAsync(
-            long runId, bool accepted, DateTimeOffset finishedAt,
+        public async Task<Result<bool>> RecordOutcomeAsync(
+            long runId, OperationItemOutcome outcome, CancellationToken cancellationToken = default)
+        {
+            if (RecordError is { } error) return error;
+
+            if (WriteDelay > TimeSpan.Zero) await Task.Delay(WriteDelay, cancellationToken);
+
+            // The list is not thread-safe; the recorder serialises its writes, and
+            // this lock is what would expose it if it stopped doing so.
+            lock (_gate)
+            {
+                Outcomes.Add(outcome);
+            }
+
+            return true;
+        }
+
+        public Task<Result<bool>> CompleteRunAsync(
+            long runId, DateTimeOffset finishedAt, int succeeded, int failed, string summary,
             CancellationToken cancellationToken = default)
         {
-            var index = (int)runId - 1;
-            Runs[index] = Runs[index] with { EditAccepted = accepted, FinishedAt = finishedAt };
+            if (CompleteError is { } error) return Task.FromResult<Result<bool>>(error);
+
+            var index = Runs.FindIndex(r => r.Id == runId);
+            Runs[index] = Runs[index] with
+            {
+                FinishedAt = finishedAt,
+                Succeeded = succeeded,
+                Failed = failed,
+                Summary = summary
+            };
+
             return Task.FromResult<Result<bool>>(true);
         }
 
-        public Task<Result<IReadOnlyList<AgentRunRecord>>> ListRunsAsync(
+        public Task<Result<IReadOnlyList<OperationRun>>> ListRunsAsync(
             string profileKey, int limit, CancellationToken cancellationToken = default)
         {
-            AgentRunRecord[] matching =
+            if (ListError is { } error) return Task.FromResult<Result<IReadOnlyList<OperationRun>>>(error);
+
+            OperationRun[] matching =
             [
                 .. Runs.Where(r => r.ProfileKey == profileKey)
                     .OrderByDescending(r => r.StartedAt)
                     .Take(limit)
             ];
-            return Task.FromResult<Result<IReadOnlyList<AgentRunRecord>>>(matching);
+
+            return Task.FromResult<Result<IReadOnlyList<OperationRun>>>(matching);
         }
-    }
 
-    private static AgentRunRecord AgentRun(
-        string profileKey = "o/p",
-        bool? accepted = true,
-        DateTimeOffset? startedAt = null) =>
-        new()
+        public Task<Result<IReadOnlyList<OperationItemOutcome>>> ListOutcomesAsync(
+            long runId, CancellationToken cancellationToken = default)
         {
-            ProfileKey = profileKey,
-            ProviderId = "claude",
-            ProviderVersion = "2.1.0",
-            Prompt = "Add a runbook task to every Issue.",
-            Scope = "Issue",
-            ScopeLabel = "PROJ-101",
-            StartedAt = startedAt ?? Noon,
-            Status = "Completed",
-            ExitCode = 0,
-            EditAccepted = accepted,
-            Summary = "1 issue's description rewritten",
-        };
+            OperationItemOutcome[] matching =
+                [.. Outcomes.Where(o => o.RunId == runId).OrderBy(o => o.Sequence)];
 
-    [Fact]
-    public async Task TheTimelineListsTheProfileSAgentRunsWithTheirVerdicts()
-    {
-        var history = new FakeAgentHistory();
-        history.Runs.Add(AgentRun(accepted: true));
-        history.Runs.Add(AgentRun(accepted: false, startedAt: Noon.AddMinutes(5)));
-
-        var timeline = new HistoryViewModel(new FakeHistory(), history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        Assert.True(timeline.HasAgentSection);
-        Assert.Equal(2, timeline.AgentRuns.Count);
-
-        var newest = timeline.AgentRuns[0];
-        Assert.Equal("claude 2.1.0", newest.Provider);
-        Assert.Equal("× rejected", newest.Verdict);
-        Assert.Equal("Issue · PROJ-101", newest.Scope);
-
-        Assert.Equal("✓ accepted", timeline.AgentRuns[1].Verdict);
-    }
-
-    [Fact]
-    public async Task AnUnreviewedAgentRunIsShownAsUnderReviewRatherThanGuessed()
-    {
-        var history = new FakeAgentHistory();
-        history.Runs.Add(AgentRun(accepted: null));
-
-        var timeline = new HistoryViewModel(new FakeHistory(), history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        Assert.Equal("under review", Assert.Single(timeline.AgentRuns).Verdict);
-    }
-
-    [Fact]
-    public async Task AgentRunsAreScopedToTheActiveProfileLikeApplyRuns()
-    {
-        var history = new FakeAgentHistory();
-        history.Runs.Add(AgentRun());
-        history.Runs.Add(AgentRun(profileKey: "other/board"));
-
-        var timeline = new HistoryViewModel(new FakeHistory(), history);
-        await timeline.LoadAsync(Workspace(Config()));
-
-        Assert.Single(timeline.AgentRuns);
-
-        await timeline.LoadAsync(Workspace(Config("other", "board")));
-
-        Assert.Single(timeline.AgentRuns);
-        Assert.Equal("other/board", timeline.AgentRuns[0].Run.ProfileKey);
-    }
-
-    [Fact]
-    public async Task ClearEmptiesTheAgentTimelineWithTheApplyTimeline()
-    {
-        var history = new FakeAgentHistory();
-        history.Runs.Add(AgentRun());
-
-        var timeline = new HistoryViewModel(new FakeHistory(), history);
-        await timeline.LoadAsync(Workspace(Config()));
-        Assert.Single(timeline.AgentRuns);
-
-        timeline.Clear();
-
-        Assert.Empty(timeline.AgentRuns);
-        Assert.False(timeline.HasAgentRuns);
-    }
-
-    [Fact]
-    public async Task AShellWithoutAnAgentStoreOffersNoAgentSectionRatherThanAnEmptyOne()
-    {
-        var timeline = new HistoryViewModel(new FakeHistory());
-        await timeline.LoadAsync(Workspace(Config()));
-
-        Assert.False(timeline.HasAgentSection);
-        Assert.False(timeline.HasAgentRuns);
+            return Task.FromResult<Result<IReadOnlyList<OperationItemOutcome>>>(matching);
+        }
     }
 }
