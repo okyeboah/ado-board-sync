@@ -22,6 +22,16 @@ previous revision claimed 64 closures above an empty Closed section — the
 reconcile commit had dropped the table. Restored 2026-09-18 from the last
 complete register (`71e18c7~1`) plus the six rows that commit itself closed.
 
+## Open
+
+### High (1)
+
+#### `write-path-never-run-against-a-real-board` — The connector's write path has never been exercised against the live API
+
+- **Category:** test
+- **Evidence:** The read path now is: `LiveBoardTests` runs against a live board and passes — WIQL, the batch get, the type mapping and the 404 mapping are observed, not assumed, and the resync Plan names exactly the items the CLI's own `audit` names on that same board. The write path is not: `CreateAsync` and `UpdateAsync` still run only against `FakeBoardGateway`, so the `application/json-patch+json` shapes, the hierarchy-reverse parent link and the never-retry-a-create rule remain ports rather than observations. **(2026-09-11, re-checked while attempting the remedy: the `BoardSyncSandbox` project the local profile names no longer exists — the org returns 404 for it, and its remaining projects are the four real ones. The token's account is refused project creation: "TF50309 … Create new projects." The throwaway project must be recreated by someone holding that org permission before the write tests can run.)** **(2026-09-19, second attempted remedy, which narrowed the block to exactly one fact: the profile's token file holds a valid token again — the live read tests authenticate and get a clean 404 for the project — and a direct create-project call against the org returned HTTP 403 "TF50309 … Create new projects" for the same account. The refusal therefore stands unchanged: the account still lacks the org-level Create-new-projects permission, and the project must be recreated by someone who holds it — Org settings → Projects → New project, name `BoardSyncSandbox`, Basic process template, private — after which the gated write tests run as written.)**
+- **Remedy:** Recreate the `BoardSyncSandbox` project (or grant the account Create-new-projects), then run the three `[LiveFact(Writes = true)]` tests with `ADO_BOARD_SYNC_LIVE_CONFIG` pointing at `desktop/local/sandbox.board.config.json` and `ADO_BOARD_SYNC_LIVE_WRITE=1`. They cover import, import-again idempotency, resync and the stale-plan refusal. Writing to any of the org's four real projects is not an option — desktop contribution rule 1.
+
 ## Closed
 
 | Gap | Severity | Closed by |
