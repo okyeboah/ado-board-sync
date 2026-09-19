@@ -14,9 +14,9 @@ jobs:
     name: Docs (markdownlint)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
 
@@ -37,9 +37,9 @@ jobs:
         # interpreter is tested alongside a current one.
         python-version: ['3.9', '3.13']
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
 
@@ -50,9 +50,9 @@ jobs:
     name: Desktop (.NET)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           # desktop/global.json is the one authoritative SDK pin (ABSD-105). Naming
           # a floating '10.0.x' here as well lets the runner land in a feature band
@@ -60,7 +60,7 @@ jobs:
           # failure on a build that floats safely today.
           global-json-file: desktop/global.json
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -97,9 +97,9 @@ jobs:
           - os: ubuntu-latest
             rid: linux-x64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v6
         with:
           # The same pin the desktop job uses, for the same reason: the lane that
           # publishes must not resolve a different SDK than the lane that gated it.
@@ -122,7 +122,7 @@ jobs:
         shell: bash
         run: desktop/build/package.sh ${{ matrix.rid }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ado-board-sync-${{ matrix.rid }}
           path: desktop/artifacts/packages/
