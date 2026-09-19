@@ -67,6 +67,8 @@ options they offer and in being excluded from the `sync` chain.
    | `dedup` | Delete duplicate work items | no |
    | `sync` | The structural reconcile chain | — |
    | `sync-one CODE` | One Issue and its iteration only; never Tasks or assignees | no |
+   | `set-state IDS` | Work items named by board id, moved straight to a target state | no |
+   | `advance` | Issues whose local branches hold commit evidence: start state to working | no |
    | `sprints` | Iteration nodes and Issue/Task iteration paths | no |
    | `assign` | Issue and child-Task owners | no |
    | `close-children` | Open descendants of a Done item | no |
@@ -102,7 +104,7 @@ options they offer and in being excluded from the `sync` chain.
 
 1. Shows the `iterations` config as a table: name, start, finish, and assigned Issue codes.
 2. Lets the user add/remove Issue codes per iteration and add/remove iterations, then writes the change back to `board.config.json` atomically.
-3. Generates a Plan for iteration-node creation and Issue/Task assignment, matching the `sprints` command, including `--assign-only` (skip node creation) and `--no-tasks` (Issues only) as Plan options.
+3. Generates a Plan for iteration-node creation and Issue/Task assignment, matching the `sprints` command, including `--assign-only` (skip node creation) and `--no-tasks` (Issues only) as Plan options, and carrying `--reset-on-missing`: on a failed iteration write, Apply resets that item's iteration path to the project root and reports the recovery.
 4. If a code appears in two iterations, the app flags it and applies the same "earliest listed wins" rule as the CLI.
 
 ### 3.8 Assignees
