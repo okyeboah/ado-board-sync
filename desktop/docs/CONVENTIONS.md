@@ -90,7 +90,13 @@ commands rather than pretending (ABSD-601).
    action straight to a write.
 2. Keep credentials and PAT values out of source control, logs, exported files,
    and the operation-history store.
-3. Keep `AdoBoardSync.Core` free of HTTP, UI, and storage framework types.
+3. Keep `AdoBoardSync.Core` free of HTTP, UI, and storage framework types. The
+   enforced boundary is assembly- and package-reference-free (`CompositionRootTests`
+   reads the compiled references); three Core files additionally use `System.IO` and
+   `Environment` by documented exemption — `BoardConfig`, `BoardConfigWriter` and
+   `PatResolver`'s sources are the CLI's own modules ported verbatim, and routing
+   their reads through injected ports would reshape the ported code for no testable
+   gain. Anything else touching the filesystem belongs in Infrastructure.
 4. Do not add a comment unless it explains a non-obvious decision.
 5. Write a parity test before closing any ticket that touches parsing, HTML
    conversion, config loading, or plan computation.

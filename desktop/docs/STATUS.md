@@ -32,7 +32,7 @@ The tree also moved while this pass was being written: another line of work
 landed `SprintsView`, `AssigneesView` and `HistoryView` between the commit and
 this revision, and then the profile switcher, `UiHarness`, `ShellInteractionTests`
 and `AcceptanceTests` after it. Those rows are stated as of the working tree, and
-say so. The suite stands at **655 .NET tests** (177 Core, 74 parity, 404 desktop,
+say so. The suite stands at **715 .NET tests passing** (178 Core, 74 parity, 463 desktop,
 8 live-board skipped) and **129 CLI tests**, Release, zero warnings.
 
 A second correction landed in the same pass. This file was last revised
@@ -80,6 +80,8 @@ markdownlint lane over the delivery documents.
 | ABSD-110 Credential status and board-action gating | Done | `PlanViewModel` resolves the token off the UI thread through the composition root's `ICredentialStore` — the caveat this row once carried (the view model building its own `OsCredentialStore`) was closed on 2026-09-05 — and reports which source answered; board actions are refused with that status as their message when none does. |
 | ABSD-111 Reconcile the documents and the board | Partial | Delivered this run: STATUS/PROJECT-TRACKING/GAPS reconciled against the committed tree — 16 rows moved to Done, 11 from Not started to Partial, and the view-gap named above stated once where it belongs. Reconciled again against the working tree that followed it: ABSD-108, 401, 402, 502, 503, 508, 703 and 705 restated, TRACEABILITY's eight newly-covered criteria recorded (no criterion is Open now), three gap rows opened, and the stale 554-test figure corrected. Also sized a gap that had been under-reported: eleven of the tickets this file tracks are defined in no BACKLOG.md Outcome, not one. **Remaining:** the GitHub board itself — closing the issues whose STATUS.md row now reads Done, and a pass over the issue bodies. |
 | ABSD-112 Onboarding without a config file | Done | Two equal routes in; the form composes the same JSON the config file holds. A failed config open is reported inline with a typed code instead of replacing onboarding with an error page, and the form route scaffolds a working starter backlog with the profile's exact prefix when none exists — opt-out, never overwriting an existing file (`OnboardingViewModelTests`, 5). |
+
+| ABSD-113 Decompose the shell view model | Partial | Delivered this run: the tree, counts, dirty-tracking and splice collection are a `BacklogTreeViewModel`; the load/reload/onboarding/staleness lifecycle is a `ProfileSession`; the nav vocabulary is a `MainWindowViewModel.Navigation` partial; the credential chain both gate surfaces walk is a `CredentialSession`; the Plan command catalog and the Apply half of the gate are their own files. `MainWindowViewModel` is 492 lines of orchestration, `PlanViewModel` 403 + 190, and every `.cs` file in the solution is under the 500-line rule — verified by `wc -l` in the final gate. The planning tables' silent `DefaultReload` adapter construction became a named stand-alone refusal. **Remaining:** committed. |
 
 ### ABSD-200 · Backlog engine
 
@@ -151,12 +153,15 @@ shell has no agent section to put one in.
 
 ## Totals
 
-| State | 2026-09-01 | 2026-09-05 |
-| --- | --- | --- |
-| Done | 5 | 23 |
-| Partial | 20 | 21 |
-| Not started | 19 | 0 |
-| **Total** | **44** | **44** |
+| State | 2026-09-01 | 2026-09-05 | 2026-09-18 |
+| --- | --- | --- | --- |
+| Done | 5 | 23 | 24 |
+| Partial | 20 | 21 | 22 |
+| Not started | 19 | 0 | 0 |
+| **Total** | **44** | **44** | **45** |
+
+The 2026-09-18 column adds ABSD-113 — this run's decomposition ticket, Partial
+while uncommitted — taking the total to 45.
 
 Counted from the rows above, not carried forward. The previous revision's
 totals said 23 Done / 21 Partial while its rows summed to 22 / 22 — a row was

@@ -29,15 +29,19 @@ checked from `STATUS.md` and `TRACEABILITY.md` alone.
 
 ## 2. Burn-down
 
-Counts from `STATUS.md` (44 tickets). The 2026-08-26 column is a recount of
-that revision's own rows — its totals line said 13 Partial / 26 Not started,
-which its rows contradicted (14 / 25); all three columns below sum to 44.
+Counts from `STATUS.md`. The 2026-08-26 column is a recount of that revision's
+own rows — its totals line said 13 Partial / 26 Not started, which its rows
+contradicted (14 / 25). The first four columns sum to 44; the last to 45, which
+is the same list plus ABSD-113, added when the work it names was done.
 
-| State | 2026-08-26 (recounted) | 2026-09-01 | 2026-09-05 | 2026-09-11 |
-| --- | --- | --- | --- | --- |
-| Done | 5 | 5 | 23 | 37 |
-| Partial | 14 | 20 | 21 | 7 |
-| Not started | 25 | 19 | 0 | 0 |
+| State | 2026-08-26 (recounted) | 2026-09-01 | 2026-09-05 | 2026-09-11 | 2026-09-18 |
+| --- | --- | --- | --- | --- | --- |
+| Done | 5 | 5 | 23 | 37 | 37 |
+| Partial | 14 | 20 | 21 | 7 | 8 |
+| Not started | 25 | 19 | 0 | 0 | 0 |
+
+The 2026-09-18 delta is structural debt, not features: the shell view model's
+decomposition (ABSD-113), built and tested, Partial until committed.
 
 The 2026-09-05 jump is one commit and one audit, not a week of delivery. The
 2026-09-11 move is the reverse correction: the rows had drifted behind the code
@@ -88,6 +92,9 @@ the repository.
 | 2026-09-01 | Specs approved (rev 2) while delivery continues | The implementation has been running against them for two weeks; Draft status was blocking nothing but honesty | PRD/FSD/ARCHITECTURE/DESIGN-SYSTEM headers |
 | 2026-09-05 | Commit the tree as one checkpoint, not the §7 split | 174 files from four concurrent sessions with no commit behind any of them; splitting first would have meant reconstructing intent with no recovery point, and the slices would not each have built | §7 below |
 | 2026-09-05 | Eleven engine-complete tickets are Partial, not Done, for want of a view | The vocabulary at the top of STATUS.md counts a ticket's Outcome, and every one of these names a surface a user can reach; a tested view model nobody can open is not the Outcome | STATUS.md ABSD-401/402/403/502/508/701–706 |
+| 2026-09-18 | One `CredentialSession` behind both gate surfaces | Plan and Audit had each assembled the resolution chain and each worded the badge; the wordings had already drifted on what they report about a failed source | `CredentialSession.cs`, ABSD-113 |
+| 2026-09-18 | A planning table built without a reload gets a named refusal, not a required dependency | Making the delegate required would have broken seven inert call sites for a path none of them reaches (`CanSave` needs an open profile); the refusal keeps the failure loud where it can actually fire | `PlanningTableViewModel.NoReload` |
+| 2026-09-18 | The 500-line rule is met with real extractions first, partial files only for one coherent vocabulary | Tree, session and credential concerns became collaborators; what remained of the shell and the gate is one concern each, split at that seam only | ABSD-113 |
 
 ## 6. Suggested next-slice plan
 
