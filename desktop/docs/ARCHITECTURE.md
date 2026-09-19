@@ -50,11 +50,11 @@ flowchart LR
 | Python semantics | `re.match` anchoring and text-mode line splitting, stated once for every module ported from the CLI. | Static helpers. | implicit Python behaviour | `AdoBoardSync.Core/PythonCompat` |
 | Description Preview | Render a description as it will read on the board, by parsing the generated markup. | Parser over Backlog Engine output. | New — the CLI writes without showing. | `AdoBoardSync.Desktop/Preview` |
 | Shell + View models | Nav rail, backlog tree, split editor, Plan & Apply surface, onboarding. MVVM; no rule of its own. | MVVM over the modules above. | New — the CLI is a terminal surface. | `AdoBoardSync.Desktop/ViewModels`, `Views` |
-| Board Profile Registry | Hold the known profiles, track the active one. | Aggregate + repository. | New | Planned (ABSD-502) |
-| Backlog Watcher | Proactively detect external changes to the backlog or config. | File-system observer. | New | Planned (ABSD-504); save's conflict check is the interim guard |
-| Audit | Compute backlog-vs-board and hierarchy-state drift, read-only. | Specification pattern. | `audit` command | Planned (ABSD-304) |
-| Operation History | Persist ApplyRun/ApplyOutcome/AuditFinding locally. | Append-only local store. | New | Planned (ABSD-501) |
-| OS Credential Store | Store PAT references in the OS keychain. | Adapter. | New | Planned (ABSD-103) |
+| Board Profile Registry | Hold the known profiles, track the active one; the switcher and `AddSafelyAsync` report registration failures. | Aggregate + repository. | New | `ProfileRegistryViewModel`, `JsonProfileRegistryStore` (ABSD-502) |
+| Staleness poll | Detect external changes to the backlog: content-hash comparison on a timer and on window activation, chosen over `FileSystemWatcher` for cross-platform reliability. | Poll with a fingerprint. | New | `ProfileSession.CheckForExternalChangeAsync` (ABSD-504) |
+| Audit | Compute backlog-vs-board and hierarchy-state drift, read-only; hands off to close-children as a request. | Specification pattern. | `audit` command | `PlanBuilder.BuildAudit`, `AuditViewModel` (ABSD-304/306) |
+| Operation History | Persist ApplyRun/ApplyOutcome/AgentRunRecord in SQLite, append-only at the SQL layer. | Append-only local store. | New | `SqliteOperationHistory`, `ApplyHistoryRecorder` (ABSD-501) |
+| OS Credential Store | Resolve the PAT from the platform keychain (macOS Keychain, libsecret, Windows Credential Manager), missing-vs-refused kept apart. | Template method over a process runner seam. | New | `OsCredentialStore`, `CredentialStorePatSource` (ABSD-103) |
 
 **The preview parses generated markup, never the Markdown source.** A second
 Markdown renderer could disagree with the Backlog Engine and show a user
