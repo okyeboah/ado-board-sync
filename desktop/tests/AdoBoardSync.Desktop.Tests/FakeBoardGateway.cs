@@ -5,11 +5,10 @@ using AdoBoardSync.Core.Results;
 namespace AdoBoardSync.Desktop.Tests;
 
 /// <summary>
-/// A board that lives in a list, so the Plan Builder and the Apply Executor can be
-/// driven through every branch — the failure ones included — without a token.
-///
-/// Apply runs its independent writes concurrently, so every mutation records
-/// under a lock and id allocation stays unique under racing creates.
+///     A board that lives in a list, so the Plan Builder and the Apply Executor can be
+///     driven through every branch — the failure ones included — without a token.
+///     Apply runs its independent writes concurrently, so every mutation records
+///     under a lock and id allocation stays unique under racing creates.
 /// </summary>
 internal sealed class FakeBoardGateway : IBoardGateway
 {
@@ -51,6 +50,13 @@ internal sealed class FakeBoardGateway : IBoardGateway
     /// <summary>Set to make every update fail.</summary>
     public Error? UpdateError { get; set; }
 
+    /// <summary>
+    ///     Set to make exactly the next update fail, then clear — the "sprint write
+    ///     rejected, recovery write accepted" shape the reset-on-missing recovery
+    ///     needs, which a blanket <see cref="UpdateError" /> cannot produce.
+    /// </summary>
+    public Error? FailNextUpdate { get; set; }
+
     /// <summary>Set to make every delete fail.</summary>
     public Error? DeleteError { get; set; }
 
@@ -66,19 +72,13 @@ internal sealed class FakeBoardGateway : IBoardGateway
         lock (_gate)
         {
             ReadCount++;
-            if (ReadError is { } error)
-            {
-                return Task.FromResult<Result<BoardSnapshot>>(error);
-            }
+            if (ReadError is { } error) return Task.FromResult<Result<BoardSnapshot>>(error);
 
             copy = [.. Items];
         }
 
         var snapshot = BoardSnapshot.From(copy);
-        if (MutateOnRead is { } mutate)
-        {
-            snapshot = mutate(snapshot);
-        }
+        if (MutateOnRead is { } mutate) snapshot = mutate(snapshot);
 
         return Task.FromResult<Result<BoardSnapshot>>(snapshot);
     }
@@ -93,10 +93,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
     {
         lock (_gate)
         {
-            if (CreateError is { } error)
-            {
-                return Task.FromResult<Result<int>>(error);
-            }
+            if (CreateError is { } error) return Task.FromResult<Result<int>>(error);
 
             var id = ++_nextId;
             Created.Add((workItemType, title, descriptionHtml, parentId));
@@ -106,7 +103,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
                 Title = title,
                 WorkItemType = workItemType,
                 Description = descriptionHtml,
-                ParentId = parentId,
+                ParentId = parentId
             });
 
             return Task.FromResult<Result<int>>(id);
@@ -121,10 +118,13 @@ internal sealed class FakeBoardGateway : IBoardGateway
     {
         lock (_gate)
         {
-            if (UpdateError is { } error)
+            if (FailNextUpdate is { } once)
             {
-                return Task.FromResult<Result<bool>>(error);
+                FailNextUpdate = null;
+                return Task.FromResult<Result<bool>>(once);
             }
+
+            if (UpdateError is { } error) return Task.FromResult<Result<bool>>(error);
 
             Updated.Add((workItemId, changes));
 
@@ -133,46 +133,10 @@ internal sealed class FakeBoardGateway : IBoardGateway
             // "what does the board look like now?", which is the only question a
             // parity comparison against the CLI can ask.
             var index = Items.FindIndex(i => i.Id == workItemId);
-            if (index >= 0)
-            {
-                Items[index] = Apply(Items[index], changes);
-            }
+            if (index >= 0) Items[index] = Apply(Items[index], changes);
 
             return Task.FromResult<Result<bool>>(true);
         }
-    }
-
-    /// <summary>
-    /// Writes one patch onto an item, by the Azure DevOps reference names the
-    /// gateway sends. A field this fake does not know is ignored rather than
-    /// throwing: the real board accepts fields the port has no opinion about, and
-    /// a fake that refused them would fail tests the board would pass.
-    /// </summary>
-    private static BoardWorkItem Apply(BoardWorkItem item, IReadOnlyList<BoardFieldChange> changes)
-    {
-        foreach (var change in changes)
-        {
-            item = change.Field switch
-            {
-                BoardFieldChange.TitleField => item with { Title = change.Value },
-                BoardFieldChange.DescriptionField => item with { Description = change.Value },
-                BoardFieldChange.StateField => item with { State = change.Value },
-                BoardFieldChange.IterationPathField => item with { IterationPath = change.Value },
-
-                // A write sends the identity as a string; the board echoes it back
-                // as the unique name, so the other two facets are cleared rather
-                // than left describing whoever held the item before.
-                BoardFieldChange.AssignedToField => item with
-                {
-                    AssignedTo = change.Value,
-                    AssignedToId = string.Empty,
-                    AssignedToDisplayName = string.Empty,
-                },
-                _ => item,
-            };
-        }
-
-        return item;
     }
 
     public Task<Result<bool>> DeleteAsync(
@@ -182,10 +146,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
     {
         lock (_gate)
         {
-            if (DeleteError is { } error)
-            {
-                return Task.FromResult<Result<bool>>(error);
-            }
+            if (DeleteError is { } error) return Task.FromResult<Result<bool>>(error);
 
             Deleted.Add(workItemId);
             Items.RemoveAll(i => i.Id == workItemId);
@@ -202,10 +163,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
     {
         lock (_gate)
         {
-            if (IterationError is { } error)
-            {
-                return Task.FromResult<Result<IterationNode>>(error);
-            }
+            if (IterationError is { } error) return Task.FromResult<Result<IterationNode>>(error);
 
             Iterations.Add((name, start, finish));
 
@@ -217,8 +175,10 @@ internal sealed class FakeBoardGateway : IBoardGateway
     }
 
     public Task<Result<string?>> DefaultTeamAsync(
-        BoardConfig config, CancellationToken cancellationToken = default) =>
-        Task.FromResult<Result<string?>>(DefaultTeam);
+        BoardConfig config, CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult<Result<string?>>(DefaultTeam);
+    }
 
     public Task<Result<bool>> AddTeamIterationAsync(
         BoardConfig config,
@@ -234,8 +194,39 @@ internal sealed class FakeBoardGateway : IBoardGateway
     }
 
     /// <summary>
-    /// Seeds one item directly onto the board, bypassing Create's recorded path.
-    /// Tasks pass their parent id here, as the real batched read carries it.
+    ///     Writes one patch onto an item, by the Azure DevOps reference names the
+    ///     gateway sends. A field this fake does not know is ignored rather than
+    ///     throwing: the real board accepts fields the port has no opinion about, and
+    ///     a fake that refused them would fail tests the board would pass.
+    /// </summary>
+    private static BoardWorkItem Apply(BoardWorkItem item, IReadOnlyList<BoardFieldChange> changes)
+    {
+        foreach (var change in changes)
+            item = change.Field switch
+            {
+                BoardFieldChange.TitleField => item with { Title = change.Value },
+                BoardFieldChange.DescriptionField => item with { Description = change.Value },
+                BoardFieldChange.StateField => item with { State = change.Value },
+                BoardFieldChange.IterationPathField => item with { IterationPath = change.Value },
+
+                // A write sends the identity as a string; the board echoes it back
+                // as the unique name, so the other two facets are cleared rather
+                // than left describing whoever held the item before.
+                BoardFieldChange.AssignedToField => item with
+                {
+                    AssignedTo = change.Value,
+                    AssignedToId = string.Empty,
+                    AssignedToDisplayName = string.Empty
+                },
+                _ => item
+            };
+
+        return item;
+    }
+
+    /// <summary>
+    ///     Seeds one item directly onto the board, bypassing Create's recorded path.
+    ///     Tasks pass their parent id here, as the real batched read carries it.
     /// </summary>
     public int Seed(
         string workItemType,
@@ -258,7 +249,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
                 ParentId = parentId,
                 State = state,
                 AssignedTo = assignedTo,
-                IterationPath = iterationPath,
+                IterationPath = iterationPath
             });
             return id;
         }
@@ -270,10 +261,7 @@ internal sealed class FakeBoardGateway : IBoardGateway
         lock (_gate)
         {
             var index = Items.FindIndex(i => i.Id == id);
-            if (index >= 0)
-            {
-                Items[index] = change(Items[index]);
-            }
+            if (index >= 0) Items[index] = change(Items[index]);
         }
     }
 }

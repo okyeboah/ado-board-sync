@@ -17,7 +17,7 @@ namespace AdoBoardSync.Desktop.Tests;
 ///     says: the fake records each create and update, so "nothing was written" is
 ///     checked rather than assumed.
 /// </summary>
-public class PlanViewModelTests
+public sealed partial class PlanViewModelTests
 {
     private const string Backlog = "## Epic 1\n\n### PROJ-101 · Do the thing\n\nSome description.\n";
 

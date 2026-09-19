@@ -76,6 +76,9 @@ public static class AppServices
         services.AddSingleton<IAgentProviderRegistry, AgentProviderRegistry>();
         services.AddSingleton<IAgentRunner, AgentRunner>();
 
+        // Local git probing for `advance` — reads repositories, writes nothing.
+        services.AddSingleton<IGitEvidenceSource, GitEvidenceAdapter>();
+
         // Bytes rather than text, and therefore its own adapter (ABSD-704):
         // rejecting an agent's edit has to put the file back exactly as it was, and
         // a decode/encode round trip through IBacklogFileStore would write what this
