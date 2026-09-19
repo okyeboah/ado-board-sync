@@ -38,12 +38,12 @@ Provide a desktop companion to `ado-board-sync` that lets a user author the Mark
 - Open a Board profile: `board.config.json` and the Markdown backlog it points to — from a file, or described in onboarding when no config exists yet, with an optional scaffolded starter backlog when the backlog file itself does not exist.
 - Backlog Markdown editor with a live preview pane rendered by the same conversion rules as the CLI's description conversion; editing an item's description block and writing it back to the file atomically.
 - Inline validation of malformed markup — the desktop equivalent of `check-html` — before any write is offered.
-- Plan generation for every mutating command — `import`, `resync`, `resync-tasks [CODE]`, `dedup`, `sync`, `sync-one CODE`, `sprints`, `assign`, and `close-children` — shown as a typed diff (create/update/delete/unchanged) before Apply.
+- Plan generation for every mutating command — `import`, `resync`, `resync-tasks [CODE]`, `dedup`, `sync`, `sync-one CODE`, `sprints`, `assign`, `close-children`, `set-state IDS`, and `advance` — shown as a typed diff (create/update/delete/unchanged) before Apply.
 - Writing the import CSV from the backlog, matching `gen-csv`, for the Azure DevOps web importer and for review before a board write.
 - An explicit Apply step that executes a previously shown plan — never a silent write.
 - A read-only Audit view: backlog-vs-board drift and hierarchy state drift (a Done parent with open descendants), matching the CLI's `audit`.
 - Close-children review and apply, including the "assign from done parent" option.
-- A sprint (iteration) planning view backed by the `iterations` config.
+- A sprint (iteration) planning view backed by the `iterations` config, with `--reset-on-missing` as a reviewed apply-time recovery.
 - An assignee planning view backed by the `assignees` config.
 - Operation history: a local, append-only log of what each Apply changed and when.
 - A PAT stored in OS credential storage; the app also recognizes an existing `AZURE_DEVOPS_PAT` env var or `.ado_pat` file for projects already set up for CLI use.

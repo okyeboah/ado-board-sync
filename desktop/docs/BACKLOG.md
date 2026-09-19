@@ -129,11 +129,29 @@ Its primary gate is an automated launch smoke test, because a mistyped `StaticRe
 
 **Depends on:** ABSD-304, ABSD-109, ABSD-108. Full acceptance criteria: issue #40.
 
+### ABSD-307 · Plan the `sync` chain as one reviewed write
+
+**Outcome:** The command selector offers `sync`: import, resync and resync-tasks composed into one Plan in the chain's documented order, refused while the offline markup audit reports problems — the desktop equivalent of the CLI's `check-html` abort (FSD §3.3.4). The CSV export and the Audit stay their own sections.
+
+**Depends on:** ABSD-302, ABSD-305.
+
+### ABSD-308 · Set state by work-item id
+
+**Outcome:** The command selector offers `set-state`: move work items named by board id to a target state — the profile's terminal state by default — ticking a leading `[ ]` title checkbox on the way to Done unless opted out. Ids the board does not hold are reported as notes, not errors.
+
+**Depends on:** ABSD-302, ABSD-305.
+
+### ABSD-309 · Advance Issues from git evidence
+
+**Outcome:** The command selector offers `advance`: probe local repositories for branches that name an Issue code and hold commits beyond the base ref, and plan the move from the configured start state to the working state — never to Done. A repository that cannot be probed is reported, never silently skipped.
+
+**Depends on:** ABSD-302, ABSD-305.
+
 ## Epic ABSD-400: Sprint, ownership & closure planning
 
 ### ABSD-401 · Implement sprint (iteration) planning view and Plan
 
-**Outcome:** An editable `iterations` table, saved back into the profile's own `board.config.json` through the atomic write the config schema requires; Plan/Apply for iteration-node creation and Issue/Task assignment, matching `sprints`, `--assign-only`, and `--no-tasks`.
+**Outcome:** An editable `iterations` table, saved back into the profile's own `board.config.json` through the atomic write the config schema requires; Plan/Apply for iteration-node creation and Issue/Task assignment, matching `sprints`, `--assign-only`, and `--no-tasks`, with the apply-time `--reset-on-missing` recovery that resets a failed iteration write to the project root.
 
 **Depends on:** ABSD-303.
 

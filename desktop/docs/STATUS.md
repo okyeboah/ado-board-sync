@@ -32,7 +32,7 @@ The tree also moved while this pass was being written: another line of work
 landed `SprintsView`, `AssigneesView` and `HistoryView` between the commit and
 this revision, and then the profile switcher, `UiHarness`, `ShellInteractionTests`
 and `AcceptanceTests` after it. Those rows are stated as of the working tree, and
-say so. The suite stands at **715 .NET tests passing** (178 Core, 74 parity, 463 desktop,
+say so. The suite stands at **742 .NET tests passing** (178 Core, 74 parity, 490 desktop,
 8 live-board skipped) and **129 CLI tests**, Release, zero warnings.
 
 A second correction landed in the same pass. This file was last revised
@@ -58,7 +58,7 @@ What is left is proof, polish and one blocked gate:
 - **ABSD-111's remainder is the board, not the code** — closing the issues whose
   row here reads Done.
 
-The suite stands at **714 .NET tests** (178 Core, 74 parity, 462 desktop, 8
+The suite stands at **742 .NET tests** (178 Core, 74 parity, 490 desktop, 8
 live-board skipped) and **129 CLI tests**, Release, zero warnings, with a
 markdownlint lane over the delivery documents.
 
@@ -100,11 +100,15 @@ markdownlint lane over the delivery documents.
 | Ticket | State | Evidence, or what remains |
 | --- | --- | --- |
 | ABSD-301 Azure DevOps connector | Partial | `AzureDevOpsGateway` ports `client.py`'s WIQL, batch get, create, patch, delete and retry contract — including never retrying a create and always retrying a delete of an identified item. Iterations and teams have since landed (`EnsureIterationAsync`, `DefaultTeamAsync`, `AddTeamIterationAsync`), closing this row's previous remainder. Its **read** path is proven against a live board by `LiveBoardTests`. **Remaining:** the write paths have still never run against a real board. |
-| ABSD-302 Plan Builder | Done | All nine CLI commands plan: `BuildImport`, `BuildResync`, `BuildResyncTasks`, `BuildDedup`, `BuildSprints`, `BuildAssign`, `BuildCloseChildren`, `BuildSyncOne` and `BuildAudit`. 62 builder tests plus 14 `PlanParityTests` — `sync-one`, the ninth command, has the two scenarios the single-item shape asks for: the update of a drifted Issue and the create of a missing one. Generation is pure and reads only. |
+| ABSD-302 Plan Builder | Done | Every CLI command the board can write plans through the same builder — the eight structural and lifecycle commands, `sync` (ABSD-307), `set-state` (ABSD-308) and `advance` (ABSD-309) — plus the read-only audit. Generation is pure and reads only. |
 | ABSD-303 Apply Executor with stale-plan guard | Partial | Applies exactly the reviewed rows; refuses on `plan.stale_backlog` or `plan.stale_board` before the first write, and while unsaved editor edits exist. Independent rows are written concurrently — bounded fan-out, ordered after dependency waves — and reported outcomes keep the Plan's row order (`ApplyExecutorTests`, 12). **Remaining:** never run against a live board. |
 | ABSD-304 Audit | Done | `BuildAudit` + `AuditReport` port the CLI's `audit` — missing, extra, drifted, and open descendants of Done. `PlanBuilderAuditTests` (13). |
 | ABSD-305 Plan review and Apply confirmation surface | Done | Command selector over all eight applicable commands with their options, Plan rows badged with glyph and word, and a confirmation restating counts before any write (`PlanViewModelTests`, 21). |
 | ABSD-306 Audit view and Close-children handoff | Done | `AuditView.axaml` renders the report read-only; `RequestCloseChildren` hands off through `MainWindowViewModel` to `BoardPlan.Choose(PlanCommand.CloseChildren)`, so closure goes through the same Plan/Apply gate as every other write (`AuditViewModelTests`, 12). |
+
+| ABSD-307 `sync` as one Plan | Done | `BuildSync` composes import, resync and resync-tasks rows in the chain's documented order and refuses with `markup.invalid` while the offline audit reports problems — the CLI's `check-html` abort (FSD §3.3.4). `PlanBuilderStateTests` pin composition, order and the quiet case; `PlanParityTests.SyncLeavesTheSameBoardTheCliLeaves` compares the board the CLI's `sync` leaves with the port's, field for field. |
+| ABSD-308 `set-state` | Done | `BuildSetState` plans state writes for board ids, ticks a leading `[ ]` title on the way to Done unless opted out, and reports unknown ids as notes. `PlanBuilderStateTests` pin tick, no-tick, an explicit target state and the notes; `PlanParityTests.SetStateLeavesTheSameBoardTheCliLeaves` compares end boards with the CLI. |
+| ABSD-309 `advance` | Done | `IGitEvidenceSource`/`GitEvidenceAdapter` probe local repositories through an injected runner seam; `BuildAdvance` plans only the start-to-working move, reports evidence without a board Issue as notes, and refuses without `states.todo`/`states.doing`. `PlanBuilderStateTests` pin the branches; `PlanParityTests.AdvanceLeavesTheSameBoardTheCliLeaves` probes one real git repository from both sides and compares end boards. |
 
 ### ABSD-400 · Sprint, ownership & closure planning
 
@@ -113,7 +117,7 @@ Every row here has its engine and its view model, and none has a view. See
 
 | Ticket | State | Evidence, or what remains |
 | --- | --- | --- |
-| ABSD-401 Sprint planning view | Done | `BuildSprints` plans iteration creation and assignment; `SprintPlanningViewModel` drives the table (`PlanningTableTests`, 15). `SprintsView.axaml` is in the nav rail and `ShellInteractionTests` adds a row through the button and types into it, so the two-way bindings are proven rather than assumed. `Adopt` fills the table from the open profile and `Clear` empties it when that profile closes. Saving writes the profile's own `board.config.json` through `BoardConfigWriter`'s atomic temp-then-rename, and the shell re-adopts the saved profile. |
+| ABSD-401 Sprint planning view | Done | `BuildSprints` plans iteration creation and assignment; `SprintPlanningViewModel` drives the table (`PlanningTableTests`, 15). `SprintsView.axaml` is in the nav rail and `ShellInteractionTests` adds a row through the button and types into it, so the two-way bindings are proven rather than assumed. `Adopt` fills the table from the open profile and `Clear` empties it when that profile closes. Saving writes the profile's own `board.config.json` through `BoardConfigWriter`'s atomic temp-then-rename, and the shell re-adopts the saved profile. The CLI's `--reset-on-missing` is a reviewed Plan option: `ApplyExecutor` resets a failed iteration write to the project root and reports the recovery in the row's outcome (`PlanBuilderStateTests`). |
 | ABSD-402 Assignee planning view | Done | `BuildAssign` plans assignment with the `assign-only`, `only-unassigned` and `assign-from-parent` options; `AssigneePlanningViewModel` drives the table. Comparison matches the CLI on all three identity facets — uniqueName, id and displayName — which a uniqueName-only comparison got wrong and would have re-planned the same write forever. An item that is already correctly owned is shown as **Unchanged** rather than dropped from the plan (PRD-AC-12). `AssigneesView.axaml` is in the nav rail and driven by `ShellInteractionTests`; the save path is the same atomic config write as ABSD-401's. |
 | ABSD-403 Close-children review | Done | `BuildCloseChildren` plans the terminal state for every open descendant of a Done item at any depth; `--assign-from-parent` is the Plan surface's checkbox (`SupportsAssignFromParent`), and PRD-AC-09 pins the inheritance rule end to end. The review the ticket names is the Audit view's hierarchy findings — each names its Done parent and open descendants, read-only, with closure reachable only through the Close-children Plan and its confirmation (`TheAuditPaneStillOffersNoWriteOfItsOwn` checks the pane offers no write). |
 
@@ -153,15 +157,18 @@ shell has no agent section to put one in.
 
 ## Totals
 
-| State | 2026-09-01 | 2026-09-05 | 2026-09-18 |
-| --- | --- | --- | --- |
-| Done | 5 | 23 | 24 |
-| Partial | 20 | 21 | 22 |
-| Not started | 19 | 0 | 0 |
-| **Total** | **44** | **44** | **45** |
+| State | 2026-09-01 | 2026-09-05 | 2026-09-18 | 2026-09-19 |
+| --- | --- | --- | --- | --- |
+| Done | 5 | 23 | 37 | 40 |
+| Partial | 20 | 21 | 8 | 8 |
+| Not started | 19 | 0 | 0 | 0 |
+| **Total** | **44** | **44** | **45** | **48** |
 
-The 2026-09-18 column adds ABSD-113 — this run's decomposition ticket, Partial
-while uncommitted — taking the total to 45.
+The 2026-09-18 column was recounted from this file's own rows when the
+2026-09-19 column was added: that revision's totals said 24 Done / 22 Partial
+while its rows counted 37 / 8 — the fourth totals drift this table has carried,
+and the reason the 2026-09-19 column is derived from the rows, not carried.
+Its delta adds ABSD-307, ABSD-308 and ABSD-309.
 
 Counted from the rows above, not carried forward. The previous revision's
 totals said 23 Done / 21 Partial while its rows summed to 22 / 22 — a row was
@@ -186,8 +193,7 @@ loads a Board profile — from a `board.config.json`, from details typed into th
 app, or from the profile switcher — shows each item's source beside the exact
 HTML `import` would send, edits with live preview and live markup problems, saves
 atomically, refuses to clobber an external change, watches the file while the
-window is open, exports the import CSV byte-identical to `gen-csv`, plans all
-nine commands behind the review gate, applies them concurrently with per-item
+window is open, exports the import CSV byte-identical to `gen-csv`, plans every CLI command behind the review gate, applies them concurrently with per-item
 outcomes recorded to SQLite, audits drift read-only and hands closure back
 through the gate, plans sprints and assignees into the profile's own config, and
 records and shows every Apply and every agent run scoped to the active profile.
