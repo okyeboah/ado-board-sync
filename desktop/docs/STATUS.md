@@ -46,17 +46,17 @@ everything else → Not started.
 
 ## The shape of what remains
 
-Every engine, every view model and every surface is built, tested and committed.
-What is left is proof, polish and one blocked gate:
+Every engine, every view model, every surface and every launch path is built,
+tested and committed. What is left is two blocked gates and one manual step:
 
 - **The write path has never touched a real board.** The read path is observed
   live; the JSON-patch shapes, the parent link and the retry rules are ports
-  until the sandbox project exists again (GAPS holds the blocked remedy).
-- **The agent epic is reachable.** `AgentView` is in the nav rail with discovery,
-  run, cancel, the three disclosures, the diff review and the history readback
-  (ABSD-701–706, all Done).
-- **ABSD-111's remainder is the board, not the code** — closing the issues whose
-  row here reads Done.
+  until the sandbox project exists again (GAPS holds the blocked remedy; the
+  org returned `TF50309` for create-project again on 2026-09-19).
+- **Signing** waits on a credential this repository must never hold (ABSD-601).
+- **PRD-AC-17's installer flow** — the packages' contents now launch in CI on
+  all three OSes with no toolchain on `PATH` (ABSD-506); installing the package
+  itself is still the one manual step.
 
 The suite stands at **742 .NET tests** (178 Core, 74 parity, 490 desktop, 8
 live-board skipped) and **129 CLI tests**, Release, zero warnings, with a
@@ -78,10 +78,10 @@ markdownlint lane over the delivery documents.
 | ABSD-108 Headless UI test harness | Partial | `UiHarness` owns the headless platform for the whole process (two classes bootstrapping their own would fail whichever ran second), finds controls across both the visual and logical trees, answers "is this actually on screen" for the collapsed panes, clicks and types. `ShellInteractionTests` (8) drive the real window. It earned itself twice on its first run: `BindingFailures` caught the shell assigning its DataContext after `InitializeComponent`, so every binding resolved against null once on the way up, and the finders caught two panes offering the same button caption. Verified live by reverting that fix and watching the assertion fail. **Remaining:** pointer synthesis, deliberately — raising the routed `Click` event is chosen over hit-tested pointer presses for the flake rationale recorded on `UiHarness.Click`; keyboard events now go through the real headless input pipeline (`AccessibilityTests`, Ctrl+S and Tab) — and `Avalonia.Headless.XUnit`'s attributes stay unadopted, since they would add a package to solve the cross-class dispatch problem the harness's own UI thread closed. |
 | ABSD-109 Design system and shell chrome | Done | Both theme palettes from DESIGN-SYSTEM.md §2, the spacing/type/radius scale, and the nav-rail shell — verified in light and dark. The contrast pass is documented with its measured numbers (DESIGN-SYSTEM §2) and pinned by `AccessibilityTests` over Theme.axaml's own hex values; it found white-on-orange plan labels at 2.03:1, which is why `TextOnPlanBrush` exists. §6 is built where the app restyles templates: focus outlines in the accent, `Ctrl+S` and Tab proven through the real input pipeline, Plan rows announcing operation and code as one phrase. |
 | ABSD-110 Credential status and board-action gating | Done | `PlanViewModel` resolves the token off the UI thread through the composition root's `ICredentialStore` — the caveat this row once carried (the view model building its own `OsCredentialStore`) was closed on 2026-09-05 — and reports which source answered; board actions are refused with that status as their message when none does. |
-| ABSD-111 Reconcile the documents and the board | Partial | Delivered this run: STATUS/PROJECT-TRACKING/GAPS reconciled against the committed tree — 16 rows moved to Done, 11 from Not started to Partial, and the view-gap named above stated once where it belongs. Reconciled again against the working tree that followed it: ABSD-108, 401, 402, 502, 503, 508, 703 and 705 restated, TRACEABILITY's eight newly-covered criteria recorded (no criterion is Open now), three gap rows opened, and the stale 554-test figure corrected. Also sized a gap that had been under-reported: eleven of the tickets this file tracks are defined in no BACKLOG.md Outcome, not one. **Remaining:** the GitHub board itself — closing the issues whose STATUS.md row now reads Done, and a pass over the issue bodies. |
+| ABSD-111 Reconcile the documents and the board | Done | The document half was delivered across the 2026-08-20 and 2026-09-18 reconciles; the board half closed 2026-09-19: every issue whose row here read Done was closed with STATUS.md named as the authority — 15 ticket issues and the three epics whose children are all Done — and the issue-body pass is the two passes already recorded in GAPS (`ac05-ac07-not-on-any-issue`, `issue-comment-counts-stale`), which left no further body defect. This row's own issue (#35) closes at the merge of the change that flips it. |
 | ABSD-112 Onboarding without a config file | Done | Two equal routes in; the form composes the same JSON the config file holds. A failed config open is reported inline with a typed code instead of replacing onboarding with an error page, and the form route scaffolds a working starter backlog with the profile's exact prefix when none exists — opt-out, never overwriting an existing file (`OnboardingViewModelTests`, 5). |
 
-| ABSD-113 Decompose the shell view model | Partial | Delivered this run: the tree, counts, dirty-tracking and splice collection are a `BacklogTreeViewModel`; the load/reload/onboarding/staleness lifecycle is a `ProfileSession`; the nav vocabulary is a `MainWindowViewModel.Navigation` partial; the credential chain both gate surfaces walk is a `CredentialSession`; the Plan command catalog and the Apply half of the gate are their own files. `MainWindowViewModel` is 492 lines of orchestration, `PlanViewModel` 403 + 190, and every `.cs` file in the solution is under the 500-line rule — verified by `wc -l` in the final gate. The planning tables' silent `DefaultReload` adapter construction became a named stand-alone refusal. **Remaining:** committed. |
+| ABSD-113 Decompose the shell view model | Done | Delivered this run: the tree, counts, dirty-tracking and splice collection are a `BacklogTreeViewModel`; the load/reload/onboarding/staleness lifecycle is a `ProfileSession`; the nav vocabulary is a `MainWindowViewModel.Navigation` partial; the credential chain both gate surfaces walk is a `CredentialSession`; the Plan command catalog and the Apply half of the gate are their own files. `MainWindowViewModel` is 492 lines of orchestration, `PlanViewModel` 403 + 190, and every `.cs` file in the solution is under the 500-line rule — verified by `wc -l` in the final gate. The planning tables' silent `DefaultReload` adapter construction became a named stand-alone refusal. The remainder was the commit itself; it landed as PR #60. |
 
 ### ABSD-200 · Backlog engine
 
@@ -127,10 +127,10 @@ Every row here has its engine and its view model, and none has a view. See
 | --- | --- | --- |
 | ABSD-501 Operation history store | Done | `SqliteOperationHistory` over one SQLite file, registered under both the ports it implements so a single connection serves history and agent runs. `OperationHistoryTests` (13) and `OperationsWiringTests` (4). |
 | ABSD-502 Multi-profile registry | Done | `ProfileRegistry`, `JsonProfileRegistryStore` and `ProfileRegistryViewModel` (`ProfileRegistryTests`, 18; `ProfileSwitchingTests`, 25). The switcher combo and the Forget control are both in the nav rail — forgetting un-registers without touching the `board.config.json` it pointed at — and `ShellInteractionTests` drives the combo and the Forget button through the real window. `Adopt` registers each profile it opens, and choosing another one opens it. |
-| ABSD-503 End-to-end parity and acceptance suite | Partial | Both halves now exist. Parity: 74 comparisons against the live Python modules, `ParityCoverageTests` guards, `PlanParityTests` (14) comparing the board each implementation leaves behind, and `LiveBoardTests` gated behind `ADO_BOARD_SYNC_LIVE_CONFIG` (writes behind `ADO_BOARD_SYNC_LIVE_WRITE`). Acceptance: `AcceptanceTests` carries one test per PRD criterion, each tagged with its id, and `EveryAcceptanceCriterionInThePrdHasATest` reads `PRD.md` and fails when a criterion has no test or a test claims one that no longer exists — verified by adding a PRD-AC-21 row and watching it fail. **Remaining:** PRD-AC-17 is asserted about the packaging scripts rather than an installed package, which no in-process test can do — the criterion was checked once by hand, running the published binary under `env -i` with no toolchain. |
+| ABSD-503 End-to-end parity and acceptance suite | Partial | Both halves now exist. Parity: 74 comparisons against the live Python modules, `ParityCoverageTests` guards, `PlanParityTests` (18) comparing the board each implementation leaves behind, and `LiveBoardTests` gated behind `ADO_BOARD_SYNC_LIVE_CONFIG` (writes behind `ADO_BOARD_SYNC_LIVE_WRITE`). Acceptance: `AcceptanceTests` carries one test per PRD criterion, each tagged with its id, and `EveryAcceptanceCriterionInThePrdHasATest` reads `PRD.md` and fails when a criterion has no test or a test claims one that no longer exists — verified by adding a PRD-AC-21 row and watching it fail. **Remaining:** only PRD-AC-17's installer flow — the CI launch proof starts the self-contained binary on every OS with the SDK off `PATH` (ABSD-506), but nothing yet installs the `.dmg`/`.zip`/`.tar.gz` and launches the result; that stays the manual step. |
 | ABSD-504 External change detection | Done | Both halves. Save refuses to overwrite an external change and names Reload, keeping the buffer. The proactive half is a poll, not a `FileSystemWatcher`: the shell compares the file's content stamp on a 30-second dispatcher timer and every time the window is activated, marks the profile stale before anything can be planned or applied against it, and a read that failed — a file caught mid-rename, a dropped share — raises nothing. An editor rewriting identical bytes is correctly not a change: the stamp is a content hash. Tested at three levels: the poll's edge cases (`MainWindowViewModelTests`), the refusal-and-reload cycle end to end (`AcceptanceTests`, PRD-AC-15), and the banner itself through the real window (`ShellInteractionTests`). |
 | ABSD-505 Continuous integration | Done | `.github/workflows/build-and-test.yml`; green on `main`. |
-| ABSD-506 Extend CI to the desktop application | Partial | The workflow restores, builds and tests the whole `.slnx` in Release on ubuntu, live tests skipping without the env var, and a packaging lane builds all three platforms on every run — it has been green over this code since `2425e5b`. A docs lane now lints the delivery documents too. **Remaining:** the tri-platform launch proof the Outcome names — a window actually raised on macOS, Windows and Linux, not a package that built. |
+| ABSD-506 Extend CI to the desktop application | Done | The workflow restores, builds and tests the whole `.slnx` in Release on ubuntu, live tests skipping without the env var, a packaging lane builds all three platforms on every run, and a docs lane lints the delivery documents. The launch proof the Outcome names is the packaging lane's `Launch proof` step (`desktop/build/launch-proof.sh`): the published binary starts on the runner's own OS and its window is observed from outside the process — CGWindowList on macOS, xdotool on Xvfb on Linux, `MainWindowHandle` on Windows — so a XAML failure that still exits 0 fails the job. On macOS and Linux the app runs with the .NET SDK off `PATH`, which is the CI form of PRD-AC-17's toolchain clause; the proof is validated locally on osx-arm64 first. |
 | ABSD-507 Structured diagnostics | Done | `JsonLinesDiagnosticsSink` writes Plan generation, Apply and file writes to a rolling JSONL log, on by default; `DiagnosticRedaction` registers the resolved token so it cannot reach the log. The sink never throws, so an unwritable log directory costs the log and nothing else (`DiagnosticsSinkTests`, 13). **This row was previously false and is corrected here.** It claimed those three events were written when nothing emitted one: `DiagnosticsExtensions` declared all five with no production caller, and `ApplyHistoryRecorder` built its own by hand, putting item titles in the log. The Plan gate now emits `PlanGenerated`, `ApplyStarted`, `ApplyFinished` and `OperationFailed`; `ProfileLoader` emits `FileWritten` for the backlog save and the CSV export. `OperationsWiringTests` proves each reaches a sink and that no event carries a title (NFR-6, Covered). |
 | ABSD-508 Operation history timeline | Done | `HistoryViewModel` reads the store and scopes every row to the active profile's key (`HistoryTimelineTests`, 23). `HistoryView.axaml` is in the nav rail and `ShellInteractionTests` opens it and now renders a recorded run through the real view, expanding its per-item outcomes. The Outcome's filters are built: by command and by time span, over the loaded page (`TheCommandFilterNarrowsTheTimelineAndAllCommandsRestoresIt`, `.TheSpanFilterHidesRunsOlderThanItsLength`). The timeline is also fed: `Adopt` loads it, and the recorder actually receives every row — Apply reported outcomes through a `Progress<T>`, which posts to the dispatcher and returned *after* the run was closed, so the store refused them and the per-item outcomes were being dropped (`AcceptanceTests`, PRD-AC-08, found it). |
 
@@ -159,8 +159,8 @@ shell has no agent section to put one in.
 
 | State | 2026-09-01 | 2026-09-05 | 2026-09-18 | 2026-09-19 |
 | --- | --- | --- | --- | --- |
-| Done | 5 | 23 | 37 | 40 |
-| Partial | 20 | 21 | 8 | 8 |
+| Done | 5 | 23 | 37 | 43 |
+| Partial | 20 | 21 | 8 | 5 |
 | Not started | 19 | 0 | 0 | 0 |
 | **Total** | **44** | **44** | **45** | **48** |
 
@@ -168,7 +168,9 @@ The 2026-09-18 column was recounted from this file's own rows when the
 2026-09-19 column was added: that revision's totals said 24 Done / 22 Partial
 while its rows counted 37 / 8 — the fourth totals drift this table has carried,
 and the reason the 2026-09-19 column is derived from the rows, not carried.
-Its delta adds ABSD-307, ABSD-308 and ABSD-309.
+That column's delta: ABSD-307/308/309 landed, the launch proof landed
+(ABSD-506), ABSD-113's commit landed (PR #60), and the Done issues closed
+(ABSD-111) — three rows moved in the same pass.
 
 Counted from the rows above, not carried forward. The previous revision's
 totals said 23 Done / 21 Partial while its rows summed to 22 / 22 — a row was
@@ -203,21 +205,20 @@ refused unless the user confirms, the backlog and board still match what the Pla
 was computed against, and the editor holds nothing unsaved against a file that
 has not moved.
 
-Three honest limits. The connector's **write** path has still not run against a
-real board — the sandbox project is gone and the account cannot recreate it.
-**AC-17** has never been proven by an installed package on a clean machine —
-once, by hand, a published binary ran under `env -i`. And **signing** waits on a
-credential this repository must never hold.
+Two blocked gates and one manual step. The connector's **write** path has still
+not run against a real board — the sandbox project is gone and the account
+cannot recreate it (`TF50309`, re-verified 2026-09-19). **AC-17's** start clause
+is CI-proven now — each OS launches the self-contained binary with the SDK off
+`PATH` — but nothing yet installs a package and launches the result. And
+**signing** waits on a credential this repository must never hold.
 
 ## Next tickets
 
 1. **Recreate the sandbox and run the live writes** — the one High gap, blocked
-   on an org permission; the remedy in GAPS is ready to execute the moment the
-   project exists.
-2. **Close the GitHub issues whose row here reads Done** (ABSD-111's remainder),
-   and give the issue bodies a pass.
-3. **The tri-platform launch proof** (ABSD-506) — a window raised on each OS in
-   CI, not a package that built.
+   on an org permission (`TF50309` re-verified 2026-09-19); the remedy in GAPS
+   is ready to execute the moment the project exists.
+2. **Sign the packages** (ABSD-601) — blocked on a credential the repository
+   must never hold; the packaging script prints the exact invocations.
 
 ## Release slices
 
