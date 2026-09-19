@@ -122,6 +122,15 @@ jobs:
         shell: bash
         run: desktop/build/package.sh ${{ matrix.rid }}
 
+      # ABSD-506's launch claim, which exit code 0 cannot carry (a XAML load
+      # failure also exits 0): the published binary is started on this runner's
+      # own OS and its window is observed from outside the process. macOS and
+      # Linux run it with the .NET SDK off PATH — the CI form of PRD-AC-17's
+      # "no developer toolchain present".
+      - name: Launch proof
+        shell: bash
+        run: desktop/build/launch-proof.sh ${{ matrix.rid }}
+
       - uses: actions/upload-artifact@v7
         with:
           name: ado-board-sync-${{ matrix.rid }}

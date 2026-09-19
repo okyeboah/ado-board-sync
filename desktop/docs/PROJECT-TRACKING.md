@@ -24,7 +24,7 @@ checked from `STATUS.md` and `TRACEABILITY.md` alone.
 | R2 Backlog editor | Edit with live preview, inline validation, atomic save, CSV export. | **Done.** Editing, live recompute, atomic save with external-change refusal, and byte-identical CSV export are committed and tested. The gutter-marker remainder was superseded by the PRD-AC-03 decision: the converter escapes raw markup, so no authored input can put a problem on one line. |
 | R3 Plan & apply | Import/resync/resync-tasks/dedup/sync planned, reviewed, applied; Audit view matches the CLI. | **Partial.** Every CLI command plans — the nine, plus `set-state` and `advance` (2026-09-19); Apply is gated, concurrent, ordered and recorded; the Audit view hands closure back through the same gate. Remainder is proof, not features: the write path has never run against a real board, and the sandbox project it needs is gone (GAPS holds the blocked remedy). |
 | R4 Sprints, assignees & operations | Sprint/assignee tables with config write-back, close-children review, history store + timeline. | **Done.** The tables save into the profile's own config through the atomic write (ticketed in ABSD-401/402 since 2026-09-11); close-children reviews through Audit's findings and applies through the gate; the timeline renders, filters and shows agent runs too. |
-| R5 Distribution | Signed installable package per OS, installable without a toolchain (PRD-AC-17). | **Partial.** `publish.sh` and `package.sh` produce self-contained, per-user packages for macOS, Windows and Linux, and CI builds and checks all three every run. The packages are unsigned by design — signing needs a credential this repository must never hold — so ABSD-601 stays open on exactly that. |
+| R5 Distribution | Signed installable package per OS, installable without a toolchain (PRD-AC-17). | **Partial.** `publish.sh` and `package.sh` produce self-contained, per-user packages for macOS, Windows and Linux, and CI builds, checks and **launches** all three every run — the launch proof raises a real window per OS with no toolchain on `PATH` (ABSD-506). The packages are unsigned by design — signing needs a credential this repository must never hold — so ABSD-601 stays open on exactly that. |
 | R6 Agent-assisted authoring | Agent CLIs spawn, edit as reviewed diff, plan consequences, runs recorded. | **Done.** The Agent section is in the nav rail: discovery, scoped prompt with the three disclosures, run and cancel, diff review, the Plan handoff, and every run readable in the history timeline. |
 
 ## 2. Burn-down
@@ -36,8 +36,8 @@ is the same list plus ABSD-113, added when the work it names was done.
 
 | State | 2026-08-26 (recounted) | 2026-09-01 | 2026-09-05 | 2026-09-11 | 2026-09-18 | 2026-09-19 |
 | --- | --- | --- | --- | --- | --- | --- |
-| Done | 5 | 5 | 23 | 37 | 37 | 40 |
-| Partial | 14 | 20 | 21 | 7 | 8 | 8 |
+| Done | 5 | 5 | 23 | 37 | 37 | 43 |
+| Partial | 14 | 20 | 21 | 7 | 8 | 5 |
 | Not started | 25 | 19 | 0 | 0 | 0 | 0 |
 
 The 2026-09-18 delta is structural debt, not features: the shell view model's
@@ -54,18 +54,21 @@ a rationale), and the GitHub board itself.
 Acceptance-criteria coverage is 19 of 20 Covered; AC-17 is the holdout, and it
 waits on an installed package, not on a test that could be written.
 
-The 2026-09-19 delta is CLI-command parity: `sync`, `set-state` and `advance`
-landed as ABSD-307/308/309 after MECE round 4 found the CLI's surface ahead of
-the desktop's (and ahead of the FSD's own command table).
+The 2026-09-19 delta is CLI-command parity plus closure: `sync`, `set-state`
+and `advance` landed as ABSD-307/308/309 after MECE round 4 found the CLI's
+surface ahead of the desktop's; then the Done GitHub issues closed (ABSD-111),
+the tri-platform launch proof landed (ABSD-506), and ABSD-113's commit landed.
+Five rows stay Partial, each for a named reason: headless pointer synthesis
+declined with a rationale (ABSD-108), the live write path (ABSD-301/303,
+blocked on the sandbox project), the acceptance suite's installer-flow clause
+(ABSD-503), and signing (ABSD-601).
 
 ## 3. Dependency map (remaining work)
 
 ```text
 sandbox project recreated ──→ [LiveFact(Writes)] tests ──→ ABSD-301/303 close ──→ R3 closed
 org permission granted ─────┘
-ABSD-506 launch proof (3 OS lanes) ──→ ABSD-506 closed
 signing credentials ────────────────→ ABSD-601 closed ──→ R5 closed
-issue bodies + close 37 Done tickets ──→ ABSD-111 closed
 ```
 
 The engine work that used to sit on this path is done. What remains is proof and
@@ -105,10 +108,8 @@ the repository.
 
 1. **Recreate the sandbox project** (or grant the account Create-new-projects),
    then run the three gated live-write tests — R3 closes on it.
-2. **Close the 37 issues whose STATUS.md row reads Done**, and pass over the
-   issue bodies — ABSD-111's remainder.
-3. **The tri-platform launch proof** for ABSD-506.
-4. **Signing** for ABSD-601 when a credential the repository can hold exists.
+2. **Sign the packages** for ABSD-601 when a credential the repository can hold
+   exists.
 
 ## 7. Commit history note
 
