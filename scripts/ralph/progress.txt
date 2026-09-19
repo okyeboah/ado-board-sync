@@ -52,3 +52,11 @@
 - Counting rule that caught two errors: re-derive every total from its own rows before publishing it.
 
 <promise>COMPLETE</promise>
+
+## 2026-09-18 (second run) — architecture/clean-code plan implementation + MECE
+
+- Delivered per the assessment plan: dead code out (sync ResolveToken, four Infrastructure usings, stale InternalsVisibleTo); ProfileKey → Core.Operations; FileSystemAgentEditFileStore → Infrastructure/Agents; CredentialSession now the one resolution chain behind Plan and Audit (badge wordings had drifted); PlanningTableViewModel's silent DefaultReload adapter construction became the named StandAloneReloads refusal (required-delegate was rejected: seven inert call sites); BacklogTreeViewModel + ProfileSession extracted from the shell; navigation is a MainWindowViewModel.Navigation partial; PlanViewModel split into catalog + apply partials; PlanBuilder.Lifecycle, AzureDevOpsGateway, OsCredentialStore and five test files split — every .cs file in the solution is under the 500-line rule.
+- TimeProvider: diagnostics extensions take an optional clock; a fixed-clock test stamps an event deterministically.
+- Data-dir: the guarantee I planned already existed (TestDataDirectory module initializer, landed between sessions) — added a CompositionRootTests guard so a future removal fails loudly. MECE lesson: my own research repeated a stale agent summary ("six commands missing") against code that had landed; the GAPS row was closed on evidence read from PlanBuilder.Lifecycle.cs, not memory.
+- GAPS.md: tonight's reconcile commit had dropped the Closed table (totals claimed 64 over an empty section). Restored from 71e18c7~1 plus the six rows that commit closed; totals re-derived from rows: 1 open (the live-write blocker) / 64 closed.
+- Gates: jb cleanupcode on the 24 changed files, then 716 .NET tests (178/74/464, 8 live skipped) + 129 CLI, zero warnings; no file >500 lines.
