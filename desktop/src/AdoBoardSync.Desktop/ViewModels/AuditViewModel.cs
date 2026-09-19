@@ -3,32 +3,30 @@ using AdoBoardSync.Core.Board;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Planning;
 using AdoBoardSync.Desktop.Services;
-using AdoBoardSync.Infrastructure;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace AdoBoardSync.Desktop.ViewModels;
 
 /// <summary>
 ///     The Audit surface (ABSD-304): where the board has drifted from the backlog.
-///
 ///     It is read-only by construction and not merely by convention — it holds no
 ///     gateway write call at all, and <see cref="AuditReport" /> is not something
 ///     Apply can consume. Acting on a finding means generating the Plan that fixes
 ///     it, which goes through the same confirmation gate as every other write. That
 ///     is the whole point of keeping audit out of the Plan/Apply object graph: a
 ///     surface that reports drift must not be able to also correct it silently.
-///
 ///     The handoff to close-children (ABSD-306) is therefore a <em>request</em>: it
 ///     names the command the shell should switch to, and the shell generates that
 ///     Plan from scratch. Nothing here pre-approves it.
 /// </summary>
 public sealed partial class AuditViewModel : ObservableObject
 {
+    private readonly CredentialSession _credentials;
     private readonly BoardGatewayFactory _gatewayFactory;
-    private readonly ICredentialStore _credentialStore;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasError))]
+    [ObservableProperty] private string _credentialStatus = string.Empty;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasError))]
     private string? _errorText;
 
     [ObservableProperty] private bool _isBusy;
@@ -45,8 +43,6 @@ public sealed partial class AuditViewModel : ObservableObject
 
     [ObservableProperty] private string _statusText = "The board has not been audited yet.";
 
-    [ObservableProperty] private string _credentialStatus = string.Empty;
-
     public AuditViewModel(
         BoardGatewayFactory? gatewayFactory = null,
         ICredentialStore? credentialStore = null)
@@ -54,12 +50,10 @@ public sealed partial class AuditViewModel : ObservableObject
         // Refuses rather than building a real connector — see PlanViewModel. The
         // container binds the delegate; a view model built outside it has no board.
         _gatewayFactory = gatewayFactory
-            ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
-        // The empty store, not the platform's — see PlanViewModel. The composition
-        // root injects the real one; a view model built outside it must not reach
-        // into the user's keychain on its own (ABSD-106).
-        _credentialStore = credentialStore
-            ?? new UnavailableCredentialStore("no credential store was supplied to this view model");
+                          ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
+        // The shared chain, so this surface resolves a token exactly as the Plan
+        // gate does (ABSD-106 builds it; CredentialSession keeps it from drifting).
+        _credentials = new CredentialSession(credentialStore);
     }
 
 
@@ -111,7 +105,7 @@ public sealed partial class AuditViewModel : ObservableObject
             $"Epics: board {Report.BoardEpicCount} / backlog {Report.BacklogEpicCount}",
             $"Issues: board {Report.BoardIssueCount} / backlog {Report.BacklogIssueCount}",
             $"Task parity: {Report.IssuesTaskChecked} issue(s) checked against backlog bullets",
-            $"Duplicates: {Report.Count(AuditKind.Duplicate)} code(s) or title(s) claimed twice",
+            $"Duplicates: {Report.Count(AuditKind.Duplicate)} code(s) or title(s) claimed twice"
         ];
 
     /// <summary>
@@ -153,8 +147,10 @@ public sealed partial class AuditViewModel : ObservableObject
             return;
         }
 
-        var token = ResolveToken(workspace.Config);
-        if (token is null)
+        var (resolver, resolution) = await _credentials
+            .ResolveAsync(workspace.Config, SessionToken, cancellationToken).ConfigureAwait(true);
+        CredentialStatus = CredentialSession.Describe(resolver, resolution);
+        if (resolution.Token is not { } token)
         {
             ErrorText = CredentialStatus;
             StatusText = "An audit reads the board, so it needs a token.";
@@ -184,16 +180,10 @@ public sealed partial class AuditViewModel : ObservableObject
                 Report = report;
 
                 Findings.Clear();
-                foreach (var finding in report.Findings)
-                {
-                    Findings.Add(finding);
-                }
+                foreach (var finding in report.Findings) Findings.Add(finding);
 
                 Reviews.Clear();
-                foreach (var review in report.Reviews)
-                {
-                    Reviews.Add(review);
-                }
+                foreach (var review in report.Reviews) Reviews.Add(review);
 
                 OnPropertyChanged(nameof(HasReviews));
                 OnPropertyChanged(nameof(CloseChildrenCaption));
@@ -214,36 +204,6 @@ public sealed partial class AuditViewModel : ObservableObject
     /// <summary>Asks the shell to plan the close-children run. Plans nothing itself.</summary>
     public void RequestCloseChildren()
     {
-        if (CanCloseChildren)
-        {
-            CloseChildrenRequested?.Invoke();
-        }
-    }
-
-    /// <summary>
-    ///     Resolves the token the same way the Plan gate does: one typed this
-    ///     session first, then the OS credential store, then the CLI's environment
-    ///     variable and token file. The status names the winning source, never the
-    ///     value.
-    /// </summary>
-    private string? ResolveToken(BoardConfig config)
-    {
-        // The shared chain, with a token typed this session in front of it. Built
-        // through PatResolver.ForConfig rather than assembled here so the Audit
-        // surface cannot drift from the Plan gate's order — two surfaces resolving
-        // credentials differently is exactly the bug a user cannot diagnose.
-        var shared = PatResolver.ForConfig(config, _credentialStore);
-        var sources = string.IsNullOrWhiteSpace(SessionToken)
-            ? shared.Sources
-            : [new SessionPatSource(SessionToken), .. shared.Sources];
-
-        var resolver = new PatResolver(sources);
-        var resolution = resolver.ResolveDetailed();
-
-        CredentialStatus = resolution.Found
-            ? $"Token resolved from {resolution.SourceName}."
-            : $"No personal access token found. Checked {resolver.DescribeSources()}.";
-
-        return resolution.Token;
+        if (CanCloseChildren) CloseChildrenRequested?.Invoke();
     }
 }

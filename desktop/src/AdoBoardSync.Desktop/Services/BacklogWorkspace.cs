@@ -40,5 +40,5 @@ public sealed record BacklogWorkspace(
     ///     and two spellings of a history key is a timeline that reads empty for a
     ///     profile that has been running all day.
     /// </summary>
-    public string ProfileKey => AdoBoardSync.Infrastructure.Operations.ProfileKey.For(Config);
+    public string ProfileKey => Core.Operations.ProfileKey.For(Config);
 }

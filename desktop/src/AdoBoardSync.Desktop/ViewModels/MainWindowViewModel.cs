@@ -1,9 +1,7 @@
 using System.Collections.ObjectModel;
-using System.ComponentModel;
 using AdoBoardSync.Core.Backlog;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Planning;
-using AdoBoardSync.Core.Results;
 using AdoBoardSync.Desktop.Services;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -11,118 +9,32 @@ using CommunityToolkit.Mvvm.Input;
 namespace AdoBoardSync.Desktop.ViewModels;
 
 /// <summary>
-/// One entry in the nav rail. A section that is not built yet says so in its own
-/// words rather than opening an empty screen.
-/// </summary>
-public sealed record NavSection(string Name, string Glyph, bool IsAvailable, string Caption, string PlannedDetail);
-
-/// <summary>
-/// The panes the shell hosts, gathered into one argument so the composition root
-/// hands the shell its surfaces rather than the shell building them.
-///
-/// <see cref="History" /> and <see cref="Profiles" /> are nullable because they are
-/// the two that need a store: a build with no operation history has no timeline to
-/// show, and says so, rather than showing an empty one.
-/// </summary>
-/// <param name="Plan">The Plan/Apply gate — the only path from this app to a write.</param>
-public sealed record ShellSurfaces(
-    PlanViewModel Plan,
-    AuditViewModel Audit,
-    SprintPlanningViewModel Sprints,
-    AssigneePlanningViewModel Assignees,
-    HistoryViewModel? History = null,
-    ProfileRegistryViewModel? Profiles = null,
-    AgentAuthoringViewModel? Agent = null)
-{
-    /// <summary>
-    /// Surfaces with no injected collaborators, for a test whose subject is
-    /// elsewhere. The two store-backed panes are absent by construction: a default
-    /// that reached for the real SQLite file would put a test's writes in the
-    /// user's own history.
-    /// </summary>
-    public static ShellSurfaces StandAlone() => new(
-        new PlanViewModel(), new AuditViewModel(), new SprintPlanningViewModel(), new AssigneePlanningViewModel());
-}
-
-/// <summary>
-/// The shell view model: one Board profile at a time, parsed with the same Core
-/// engine the CLI uses. Writes go through <see cref="BoardPlan"/> and nowhere else.
+///     The shell view model: one Board profile at a time, parsed with the same Core
+///     engine the CLI uses. Writes go through <see cref="BoardPlan" /> and nowhere else.
+///     It is orchestration only, by design. The tree is a
+///     <see cref="BacklogTreeViewModel" />, the profile's life between file and shell
+///     is a <see cref="Services.ProfileSession" />, and every write to the board lives
+///     behind <see cref="PlanViewModel" /> — so what remains here is the wiring between
+///     surfaces and the state the header, the footer and the pane switches show.
 /// </summary>
 public sealed partial class MainWindowViewModel : ObservableObject
 {
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ConfigDisplay))]
-    [NotifyPropertyChangedFor(nameof(CanReload))]
+    private readonly ProfileSession _session;
+
+    [ObservableProperty] private string _backlogFileName = string.Empty;
+
+    [ObservableProperty] private string _codePrefix = string.Empty;
+
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(ConfigDisplay))] [NotifyPropertyChangedFor(nameof(CanReload))]
     private string? _configPath;
 
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasError))]
-    [NotifyPropertyChangedFor(nameof(ShowOnboarding))]
+    [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasError))] [NotifyPropertyChangedFor(nameof(ShowOnboarding))]
     private string? _errorText;
 
-    [ObservableProperty]
-    private string _statusText = "No board profile open.";
-
-    [ObservableProperty]
-    private BacklogNodeViewModel? _selectedNode;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(CurrentSection))]
-    [NotifyPropertyChangedFor(nameof(ShowOnboarding))]
-    [NotifyPropertyChangedFor(nameof(ShowBacklog))]
-    [NotifyPropertyChangedFor(nameof(ShowPlan))]
-    [NotifyPropertyChangedFor(nameof(ShowAudit))]
-    [NotifyPropertyChangedFor(nameof(ShowSprints))]
-    [NotifyPropertyChangedFor(nameof(ShowAssignees))]
-    [NotifyPropertyChangedFor(nameof(ShowHistory))]
-    [NotifyPropertyChangedFor(nameof(ShowAgent))]
-    [NotifyPropertyChangedFor(nameof(ShowPlanned))]
-    private int _currentSectionIndex;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasBacklog))]
-    private int _epicCount;
-
-    [ObservableProperty]
-    private int _issueCount;
-
-    [ObservableProperty]
-    private int _taskCount;
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasProblems))]
-    [NotifyPropertyChangedFor(nameof(MarkupSummary))]
-    private int _problemCount;
-
     /// <summary>
-    ///     True while any editor buffer differs from the file. While it is set,
-    ///     the Plan gate refuses to run: a Plan is computed from the file, and
-    ///     the file is the source of truth.
-    /// </summary>
-    [ObservableProperty]
-    private bool _hasUnsavedEdits;
-
-    /// <summary>
-    ///     True once the backlog file on disk no longer matches what this profile was
-    ///     opened from (ABSD-504). Set by <see cref="CheckForExternalChangeAsync" />
-    ///     and cleared only by a reload — this is the "requires an explicit reload
-    ///     before continuing" half of PRD-AC-15, the half the save-time guard cannot
-    ///     provide because it only fires once the user has already done the work.
-    /// </summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(ExternalChangeText))]
-    private bool _isStale;
-
-    [ObservableProperty]
-    private string _codePrefix = string.Empty;
-
-    [ObservableProperty]
-    private string _backlogFileName = string.Empty;
-
-    /// <summary>
-    /// Which view of the description the right pane shows. The rendered preview is
-    /// the default — it is how a user checks a description before it is written;
-    /// the markup is there for when they need to see exactly what goes on the wire.
+    ///     Which view of the description the right pane shows. The rendered preview is
+    ///     the default — it is how a user checks a description before it is written;
+    ///     the markup is there for when they need to see exactly what goes on the wire.
     /// </summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ShowRenderedPreview))]
@@ -130,7 +42,141 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(MarkupPaneCaption))]
     private bool _showGeneratedMarkup;
 
+    [ObservableProperty] private string _statusText = "No board profile open.";
 
+    /// <summary>The open profile, or null when none has been opened yet.</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasProfile))]
+    [NotifyPropertyChangedFor(nameof(CanReload))]
+    [NotifyPropertyChangedFor(nameof(ConfigDisplay))]
+    [NotifyPropertyChangedFor(nameof(ShowOnboarding))]
+    [NotifyPropertyChangedFor(nameof(ShowBacklog))]
+    private BacklogWorkspace? _workspace;
+
+    /// <param name="surfaces">
+    ///     The panes the shell hosts. Injected rather than
+    ///     constructed here so the composition root's instances — the Plan gate carrying
+    ///     the history recorder and the diagnostics redactor among them — are the ones
+    ///     the shell actually shows. Building the gate inline was how Apply came to
+    ///     record nothing outside the tests (ABSD-501). Omitted in a test that is not
+    ///     about a surface, which then gets stand-alone defaults.
+    /// </param>
+    public MainWindowViewModel(
+        ProfileLoader loader,
+        IBacklogFileStore store,
+        ShellSurfaces? surfaces = null)
+    {
+        Onboarding = new OnboardingViewModel(store, loader);
+
+        surfaces ??= ShellSurfaces.StandAlone();
+        BoardPlan = surfaces.Plan;
+        Audit = surfaces.Audit;
+        Sprints = surfaces.Sprints;
+        Assignees = surfaces.Assignees;
+        History = surfaces.History;
+        Profiles = surfaces.Profiles;
+        Agent = surfaces.Agent;
+
+        Sections = BuildSections(History, Agent);
+
+        _session = new ProfileSession(
+            loader,
+            Adopt,
+            HandleOpenFailed,
+            HandleOnboardingOpenFailed,
+            HandleReloadFailed,
+            HandleStaleDetected);
+
+        // Saving an iteration or an assignee rewrites board.config.json, so the
+        // profile the rest of the shell is showing is now stale. The table re-reads
+        // it and hands the fresh workspace back here, rather than each table
+        // holding its own divergent copy.
+        Sprints.Reloaded = Adopt;
+        Assignees.Reloaded = Adopt;
+
+        // Choosing another profile in the switcher opens it here. The switcher owns
+        // which profile is active; the shell owns what is on screen, and this is the
+        // one edge between them.
+        if (Profiles is not null) Profiles.ActiveProfileChanged += OnActiveProfileChangedAsync;
+
+        if (Agent is not null)
+        {
+            // An accepted edit changed the backlog file underneath us. Re-opening
+            // is what makes the tree, the preview and the Plan describe the file
+            // that is now on disk rather than the one the agent started from.
+            Agent.EditAccepted = _ => ReloadAfterAgentEdit();
+
+            // The same handoff the Audit surface has, and for the same reason: an
+            // agent's involvement removes no step from the Plan/Apply gate. This
+            // opens the Plan surface and nothing more — no plan, no approval
+            // (ABSD-705).
+            Agent.PlanRequested = () =>
+            {
+                BoardPlan.Choose(PlanCommand.Import);
+                CurrentSectionIndex = PlanSection;
+            };
+        }
+
+        // The gate reads the tree's unsaved-edits state: a Plan is computed from
+        // the file, so edits that exist only in the editor buffer must not be
+        // planned or applied as if they were on disk.
+        BoardPlan.UnsavedEditsCheck = () => Tree.HasUnsavedEdits;
+
+        // An audit compares the board against the file for the same reason.
+        Audit.UnsavedEditsCheck = () => Tree.HasUnsavedEdits;
+
+        // …and both are equally wrong against a file somebody else has rewritten
+        // since it was opened (ABSD-504).
+        BoardPlan.StaleProfileCheck = () => IsStale;
+
+        // The only sanctioned route from a detected drift to a fix: Audit names the
+        // command, the shell switches to the Plan surface and generates it there.
+        // Nothing is pre-approved — the user still confirms, exactly as they would
+        // have if they had chosen close-children themselves (ABSD-306).
+        Audit.CloseChildrenRequested = () =>
+        {
+            BoardPlan.Choose(PlanCommand.CloseChildren);
+            CurrentSectionIndex = PlanSection;
+        };
+
+        // The agent prompt follows the rail's selection; the pass-through re-raises
+        // so anything bound to the shell's SelectedNode keeps working too.
+        Tree.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName == nameof(BacklogTreeViewModel.SelectedNode)) Agent?.ScopeTo(Tree.SelectedNode?.Item);
+        };
+    }
+
+    /// <summary>The tree, the editor buffers, and the counts the chips show.</summary>
+    public BacklogTreeViewModel Tree { get; } = new();
+
+    // Read-only pass-throughs, for tests and for the shell's own status line. The
+    // views bind Tree.* directly — a pass-through property cannot raise on behalf
+    // of the tree, so a binding here would freeze on its first value.
+
+    public ObservableCollection<BacklogNodeViewModel> Nodes => Tree.Nodes;
+
+    public BacklogNodeViewModel? SelectedNode
+    {
+        get => Tree.SelectedNode;
+        set => Tree.SelectedNode = value;
+    }
+
+    public int EpicCount => Tree.EpicCount;
+
+    public int IssueCount => Tree.IssueCount;
+
+    public int TaskCount => Tree.TaskCount;
+
+    public bool HasUnsavedEdits => Tree.HasUnsavedEdits;
+
+    public int ProblemCount => Tree.ProblemCount;
+
+    public bool HasProblems => Tree.HasProblems;
+
+    public bool HasBacklog => Tree.HasBacklog;
+
+    public string MarkupSummary => Tree.MarkupSummary;
 
     /// <summary>Settable so the Preview radio can bind two-way against it.</summary>
     public bool ShowRenderedPreview
@@ -144,8 +190,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
     public string MarkupPaneCaption => ShowGeneratedMarkup
         ? "What import sends, from the CLI's own converter — indented here for reading; the markup on the wire has no indentation."
         : "How this description will read on the board.";
-
-    public ObservableCollection<BacklogNodeViewModel> Nodes { get; } = [];
 
     /// <summary>The first-run choice: open a profile file, or describe one here.</summary>
     public OnboardingViewModel Onboarding { get; }
@@ -180,182 +224,17 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public AgentAuthoringViewModel? Agent { get; }
 
-    private readonly ProfileLoader _loader;
-
-    /// <summary>
-    ///     Cancels the load in flight when another starts. A profile opened while a
-    ///     large backlog is still being read must not have the first read's result
-    ///     land on top of it afterwards.
-    /// </summary>
-    private CancellationTokenSource? _loading;
-
-    /// <param name="surfaces">The panes the shell hosts. Injected rather than
-    /// constructed here so the composition root's instances — the Plan gate carrying
-    /// the history recorder and the diagnostics redactor among them — are the ones
-    /// the shell actually shows. Building the gate inline was how Apply came to
-    /// record nothing outside the tests (ABSD-501). Omitted in a test that is not
-    /// about a surface, which then gets stand-alone defaults.</param>
-    public MainWindowViewModel(
-        ProfileLoader loader,
-        IBacklogFileStore store,
-        ShellSurfaces? surfaces = null)
-    {
-        _loader = loader;
-        Onboarding = new OnboardingViewModel(store, loader);
-
-        surfaces ??= ShellSurfaces.StandAlone();
-        BoardPlan = surfaces.Plan;
-        Audit = surfaces.Audit;
-        Sprints = surfaces.Sprints;
-        Assignees = surfaces.Assignees;
-        History = surfaces.History;
-        Profiles = surfaces.Profiles;
-        Agent = surfaces.Agent;
-
-        Sections =
-        [
-            new("Backlog", "✎", true,
-                "The backlog file as parsed, beside what each item would send to the board.",
-                string.Empty),
-            new("Plan & Apply", "⇄", true,
-                "Read the board, review every change, then write only what you confirm.",
-                string.Empty),
-            new("Audit", "◎", true,
-                "Where the board has drifted from the backlog.",
-                string.Empty),
-            new("Sprints", "▤", true,
-                "Which items belong to which iteration.",
-                string.Empty),
-            new("Assignees", "☺", true,
-                "Who owns which item.",
-                string.Empty),
-            new("History", "⟲", History is not null,
-                "Every Apply this machine has run.",
-                "Needs the operation history store, which this build was started without."),
-            new("Agent", "✦", Agent is not null,
-                "Ask a local agent CLI to draft a change, and review it as a diff.",
-                "Needs the agent edit session, which this build was started without."),
-        ];
-
-        // Saving an iteration or an assignee rewrites board.config.json, so the
-        // profile the rest of the shell is showing is now stale. The table re-reads
-        // it and hands the fresh workspace back here, rather than each table
-        // holding its own divergent copy.
-        Sprints.Reloaded = Adopt;
-        Assignees.Reloaded = Adopt;
-
-        // Choosing another profile in the switcher opens it here. The switcher owns
-        // which profile is active; the shell owns what is on screen, and this is the
-        // one edge between them.
-        if (Profiles is not null)
-        {
-            Profiles.ActiveProfileChanged += OnActiveProfileChangedAsync;
-        }
-
-        if (Agent is not null)
-        {
-            // An accepted edit changed the backlog file underneath us. Re-opening
-            // is what makes the tree, the preview and the Plan describe the file
-            // that is now on disk rather than the one the agent started from.
-            Agent.EditAccepted = _ => ReloadAfterAgentEdit();
-
-            // The same handoff the Audit surface has, and for the same reason: an
-            // agent's involvement removes no step from the Plan/Apply gate. This
-            // opens the Plan surface and nothing more — no plan, no approval
-            // (ABSD-705).
-            Agent.PlanRequested = () =>
-            {
-                BoardPlan.Choose(PlanCommand.Import);
-                CurrentSectionIndex = PlanSection;
-            };
-        }
-
-        // The gate reads the shell's unsaved-edits state: a Plan is computed from
-        // the file, so edits that exist only in the editor buffer must not be
-        // planned or applied as if they were on disk.
-        BoardPlan.UnsavedEditsCheck = () => HasUnsavedEdits;
-
-        // An audit compares the board against the file for the same reason.
-        Audit.UnsavedEditsCheck = () => HasUnsavedEdits;
-
-        // …and both are equally wrong against a file somebody else has rewritten
-        // since it was opened (ABSD-504).
-        BoardPlan.StaleProfileCheck = () => IsStale;
-
-        // The only sanctioned route from a detected drift to a fix: Audit names the
-        // command, the shell switches to the Plan surface and generates it there.
-        // Nothing is pre-approved — the user still confirms, exactly as they would
-        // have if they had chosen close-children themselves (ABSD-306).
-        Audit.CloseChildrenRequested = () =>
-        {
-            BoardPlan.Choose(PlanCommand.CloseChildren);
-            CurrentSectionIndex = PlanSection;
-        };
-    }
-
-    /// <summary>The open profile, or null when none has been opened yet.</summary>
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasProfile))]
-    [NotifyPropertyChangedFor(nameof(CanReload))]
-    [NotifyPropertyChangedFor(nameof(ConfigDisplay))]
-    [NotifyPropertyChangedFor(nameof(ShowOnboarding))]
-    [NotifyPropertyChangedFor(nameof(ShowBacklog))]
-    private BacklogWorkspace? _workspace;
-
     public bool HasProfile => Workspace is not null;
-
-    public IReadOnlyList<NavSection> Sections { get; }
-
-    public NavSection CurrentSection =>
-        Sections[Math.Clamp(CurrentSectionIndex, 0, Sections.Count - 1)];
 
     public bool HasError => !string.IsNullOrEmpty(ErrorText);
 
     /// <summary>An unsaved profile has no config file, but its backlog is still on disk.</summary>
     public bool CanReload => Workspace is not null || !string.IsNullOrEmpty(ConfigPath);
 
-    public bool HasBacklog => EpicCount > 0;
-
-    public bool HasProblems => ProblemCount > 0;
-
     public string ConfigDisplay => Workspace?.OriginDisplay ?? ConfigPath ?? "No board profile open";
 
-    // Which pane the content column shows.
-    private const int BacklogSection = 0;
-    private const int PlanSection = 1;
-    private const int AuditSection = 2;
-    private const int SprintsSection = 3;
-    private const int AssigneesSection = 4;
-    private const int HistorySection = 5;
-    private const int AgentSection = 6;
-
-    // Not while an error is up — the failure banner owns the pane then.
-    public bool ShowOnboarding => CurrentSectionIndex == BacklogSection && !HasProfile && !HasError;
-
-    public bool ShowBacklog => CurrentSectionIndex == BacklogSection && HasProfile;
-
-    public bool ShowPlan => CurrentSectionIndex == PlanSection;
-
-    public bool ShowAudit => CurrentSectionIndex == AuditSection;
-
-    public bool ShowSprints => CurrentSectionIndex == SprintsSection;
-
-    public bool ShowAssignees => CurrentSectionIndex == AssigneesSection;
-
-    /// <summary>Guarded on the surface itself, not only on the nav entry: a
-    /// keyboard shortcut can move the index without going through the rail.</summary>
-    public bool ShowHistory => CurrentSectionIndex == HistorySection && History is not null;
-
-    public bool ShowAgent => CurrentSectionIndex == AgentSection && Agent is not null;
-
-    public bool ShowPlanned => !CurrentSection.IsAvailable;
-
-    public string MarkupSummary => ProblemCount switch
-    {
-        0 => "✓ Markup clean",
-        1 => "! 1 markup problem",
-        var n => $"! {n} markup problems",
-    };
+    /// <summary>The path the CSV save dialog offers first: the profile's own csv_file.</summary>
+    public string SuggestedCsvPath => Workspace?.Config.CsvFile ?? "work-items.csv";
 
     /// <summary>
     ///     Re-opens the profile after an agent's edit was accepted. Not awaited —
@@ -363,187 +242,62 @@ public sealed partial class MainWindowViewModel : ObservableObject
     ///     named rather than discarded inline, so the fire-and-forget is deliberate
     ///     and visible.
     /// </summary>
-    private void ReloadAfterAgentEdit() => _ = ReloadAsync();
-
-    /// <summary>
-    ///     Whether the backlog file still holds what this profile was opened from
-    ///     (ABSD-504, PRD-AC-15).
-    ///
-    ///     A poll rather than a <c>FileSystemWatcher</c>. The watcher's events are
-    ///     platform-specific, arrive several times for one save, and are silently
-    ///     dropped on network shares and some container filesystems — so a guard
-    ///     built on it would be least reliable exactly where a shared backlog is most
-    ///     likely. Comparing the content hash answers the real question directly, and
-    ///     an editor that rewrites identical bytes is correctly reported as no change.
-    ///
-    ///     The shell decides <em>what</em> stale means; the view decides <em>when</em>
-    ///     to ask — on a timer, and when the window comes back to the foreground.
-    /// </summary>
-    public async Task CheckForExternalChangeAsync()
+    private void ReloadAfterAgentEdit()
     {
-        if (Workspace is not { } workspace)
-        {
-            return;
-        }
-
-        // Already known to be stale: re-reading each tick would spend a file read to
-        // learn what is already on screen, and could only ever flip the flag back to
-        // false if the file were reverted — which a reload should confirm, not a poll.
-        if (IsStale)
-        {
-            return;
-        }
-
-        var stamped = await _loader.StampAsync(workspace.BacklogPath).ConfigureAwait(true);
-
-        // A read that failed is not evidence of a change. A file being written at
-        // the moment we looked, or a share that dropped, would otherwise raise a
-        // banner that clears itself a second later.
-        if (stamped.IsFailure)
-        {
-            return;
-        }
-
-        if (stamped.Value.ContentDiffersFrom(workspace.Stamp))
-        {
-            IsStale = true;
-            StatusText = "The backlog file changed on disk. Reload to pick it up.";
-        }
+        _ = ReloadAsync();
     }
-
-    /// <summary>What the banner says. Empty while the profile is current.</summary>
-    public string ExternalChangeText => IsStale
-        ? "This backlog was changed on disk after it was opened here. Reload to see it — "
-          + "planning or applying from the copy in memory would review one text and write another."
-        : string.Empty;
 
     /// <summary>
     ///     Keeps the agent's scope on whatever the backlog rail has selected, so the
     ///     prompt says "the selected Issue" about the Issue the user is looking at.
-    ///     Generated by the toolkit from <c>_selectedNode</c>.
     /// </summary>
-    partial void OnSelectedNodeChanged(BacklogNodeViewModel? value) => Agent?.ScopeTo(value?.Item);
-
-    /// <summary>
-    ///     Opens whichever profile the switcher just made active.
-    ///
-    ///     The path comparison is what stops the cycle: <see cref="Adopt" /> registers
-    ///     the profile it opened, which is what raises this in the first place.
-    ///     Re-opening a profile that is already on screen would re-enter Adopt and
-    ///     discard the Plan the user was looking at.
-    /// </summary>
-    private Task OnActiveProfileChangedAsync(ProfileEntry? profile, CancellationToken cancellationToken)
+    public Task CheckForExternalChangeAsync()
     {
-        if (profile is null || SamePath(profile.ConfigPath, ConfigPath))
-        {
-            return Task.CompletedTask;
-        }
-
-        return LoadAsync(profile.ConfigPath);
+        return _session.CheckForExternalChangeAsync(Workspace, IsStale);
     }
 
-    /// <summary>
-    ///     Whether two config paths name the same file. The registry stores absolute
-    ///     paths and the shell may hold the relative one it was opened with, so the
-    ///     comparison has to go through the filesystem's idea of the path rather than
-    ///     the string the caller happened to type.
-    /// </summary>
+    /// <summary>Whether two config paths name the same file. Stated on <see cref="ProfileEntry" />.</summary>
     private static bool SamePath(string? left, string? right)
     {
-        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
-        {
-            return false;
-        }
-
-        try
-        {
-            return ProfileEntry.PathComparer.Equals(
-                Path.GetFullPath(left.Trim()), Path.GetFullPath(right.Trim()));
-        }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return ProfileEntry.PathComparer.Equals(left.Trim(), right.Trim());
-        }
+        return ProfileEntry.SamePath(left, right);
     }
 
     /// <summary>Loads a Board profile, replacing whatever is currently shown.</summary>
-    public async Task LoadAsync(string configPath)
+    public Task LoadAsync(string configPath)
     {
-        var token = BeginLoad();
-        StatusText = "Opening…";
-
-        Result<BacklogWorkspace> loaded;
-        try
-        {
-            loaded = await _loader.LoadAsync(configPath, token).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            // A newer load owns the shell now; touching a bound property here would
-            // overwrite what that load already put on screen.
-            return;
-        }
-
-        if (token.IsCancellationRequested)
-        {
-            return;
-        }
-
-        if (loaded.IsFailure)
-        {
-            var error = loaded.Error!;
-            Clear();
-            ConfigPath = configPath;
-            ErrorText = $"{error.SafeMessage} ({error.Code})";
-            StatusText = "Could not open that profile.";
-            return;
-        }
-
-        Adopt(loaded.Value);
+        return _session.LoadAsync(configPath);
     }
 
-    /// <summary>
-    ///     Opens a Board profile from the onboarding screen's "I have a
-    ///     board.config.json" route. When no profile is open, a failure stays on the
-    ///     first-run screen and is reported beside the route that produced it —
-    ///     replacing the form with a blank error page would strand a new user.
-    /// </summary>
-    public async Task OpenFromOnboardingAsync(string configPath)
+    /// <summary>Opens a Board profile from the onboarding screen's config-file route.</summary>
+    public Task OpenFromOnboardingAsync(string configPath)
     {
-        var token = BeginLoad();
-
-        Result<BacklogWorkspace> loaded;
-        try
-        {
-            loaded = await _loader.LoadAsync(configPath, token).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        if (token.IsCancellationRequested)
-        {
-            return;
-        }
-
-        if (loaded.IsFailure)
-        {
-            var error = loaded.Error!;
-            Onboarding.ImportErrorText = $"{error.SafeMessage} ({error.Code})";
-            return;
-        }
-
-        Adopt(loaded.Value);
+        return _session.OpenFromOnboardingAsync(configPath);
     }
 
-    /// <summary>Starts a load, cancelling whatever was still in flight.</summary>
-    private CancellationToken BeginLoad()
+    private void HandleOpenFailed(string configPath, string message)
     {
-        _loading?.Cancel();
-        _loading?.Dispose();
-        _loading = new CancellationTokenSource();
-        return _loading.Token;
+        Clear();
+        ConfigPath = configPath;
+        ErrorText = message;
+        StatusText = "Could not open that profile.";
+    }
+
+    private void HandleOnboardingOpenFailed(string message)
+    {
+        Onboarding.ImportErrorText = message;
+    }
+
+    private void HandleReloadFailed(string message)
+    {
+        Clear();
+        ErrorText = message;
+        StatusText = "Could not reload that profile.";
+    }
+
+    private void HandleStaleDetected()
+    {
+        IsStale = true;
+        StatusText = "The backlog file changed on disk. Reload to pick it up.";
     }
 
     /// <summary>Takes an already-opened profile, as onboarding's form route produces.</summary>
@@ -551,7 +305,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     {
         // The selection survives a reload or a save when the same item is still
         // there — an editor round trip must not yank the pane to another item.
-        var identity = NodeIdentity.Of(SelectedNode);
+        var identity = Tree.SelectionIdentity;
 
         ErrorText = null;
         ConfigPath = workspace.ConfigPath;
@@ -559,7 +313,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         Onboarding.ImportErrorText = null;
 
         // Whatever the file said a moment ago, this workspace was read from it now.
-        // Clearing here rather than in ReloadAsync covers every route back to a
+        // Clearing here rather than in the reload path covers every route back to a
         // current profile — reload, save, an accepted agent edit, a profile switch.
         IsStale = false;
 
@@ -587,17 +341,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
         // read must not hold the render thread while the backlog is being built.
         // It takes the load token so that opening a second profile abandons the
         // first one's timeline read rather than letting it land on top.
-        _ = History?.LoadAsync(workspace, _loading?.Token ?? CancellationToken.None);
+        _ = History?.LoadAsync(workspace, _session.LoadToken);
 
         // Registering the profile is what makes it reappear in the switcher next
         // time (ABSD-502). A profile with no config file on disk is skipped by the
         // registry itself — there would be nothing to reopen. Explicitly
         // uncancellable: this one writes a file, and a half-written registry is
         // worse than a slow one.
-        if (Profiles is { } profiles)
-        {
-            _ = RegisterAsync(profiles, workspace);
-        }
+        if (Profiles is { } profiles) _ = profiles.AddSafelyAsync(workspace, CancellationToken.None);
 
         if (Agent is { } agent)
         {
@@ -609,7 +360,15 @@ public sealed partial class MainWindowViewModel : ObservableObject
             agent.Workspace = workspace;
         }
 
-        Rebuild(workspace, identity);
+        Tree.Rebuild(workspace, identity);
+        CodePrefix = workspace.Config.CodePrefix;
+        BacklogFileName = Path.GetFileName(workspace.BacklogPath);
+
+        var (epics, issues, tasks) = Tree.Counts;
+        StatusText =
+            $"{epics} epics · {issues} issues · {tasks} tasks · " +
+            $"{(Tree.HasProblems ? $"{Tree.ProblemCount} markup problems" : "markup clean")} · " +
+            $"{BacklogFileName} · prefix {CodePrefix}";
     }
 
     /// <summary>
@@ -622,19 +381,14 @@ public sealed partial class MainWindowViewModel : ObservableObject
     [RelayCommand]
     public async Task SaveAsync()
     {
-        if (Workspace is not { } workspace || !HasUnsavedEdits)
-        {
-            return;
-        }
+        if (Workspace is not { } workspace || !Tree.HasUnsavedEdits) return;
 
         var markdown = workspace.Markdown;
-        foreach (var (item, text) in CollectEdits())
-        {
+        foreach (var (item, text) in Tree.CollectEdits())
             markdown = BacklogSplicer.ReplaceDescription(markdown, item, text);
-        }
 
         StatusText = "Saving…";
-        var saved = await _loader.SaveAsync(workspace, markdown).ConfigureAwait(true);
+        var saved = await _session.SaveAsync(workspace, markdown).ConfigureAwait(true);
         if (saved.IsFailure)
         {
             var error = saved.Error!;
@@ -647,27 +401,6 @@ public sealed partial class MainWindowViewModel : ObservableObject
         StatusText += " · saved";
     }
 
-    /// <summary>The dirty buffers in document order, ready for last-to-first splicing.</summary>
-    private List<(BacklogItem Item, string Text)> CollectEdits()
-    {
-        var edits = new List<(BacklogItem, string)>();
-        Collect(Nodes);
-        return edits.OrderByDescending(edit => edit.Item1.DescriptionStart).ToList();
-
-        void Collect(IEnumerable<BacklogNodeViewModel> nodes)
-        {
-            foreach (var node in nodes)
-            {
-                if (node.IsDirty)
-                {
-                    edits.Add((node.Item, node.Source));
-                }
-
-                Collect(node.Children);
-            }
-        }
-    }
-
     /// <summary>
     ///     Writes the import CSV from the parsed backlog as it is on disk — the same
     ///     bytes <c>gen-csv</c> writes. It needs no credential and touches no Azure
@@ -675,12 +408,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
     /// </summary>
     public async Task ExportCsvToAsync(string destinationPath)
     {
-        if (Workspace is not { } workspace)
-        {
-            return;
-        }
+        if (Workspace is not { } workspace) return;
 
-        var written = await _loader.ExportCsvAsync(workspace, destinationPath).ConfigureAwait(true);
+        var written = await _session.ExportCsvAsync(workspace, destinationPath).ConfigureAwait(true);
         if (written.IsFailure)
         {
             var error = written.Error!;
@@ -701,91 +431,45 @@ public sealed partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>True when something is already at this path, for the overwrite prompt.</summary>
-    public bool FileExistsAt(string path) => _loader.Exists(path);
-
-    /// <summary>The path the CSV save dialog offers first: the profile's own csv_file.</summary>
-    public string SuggestedCsvPath => Workspace?.Config.CsvFile ?? "work-items.csv";
+    public bool FileExistsAt(string path)
+    {
+        return _session.Exists(path);
+    }
 
     /// <summary>Re-reads the current profile from disk, picking up external edits.</summary>
     public async Task ReloadAsync()
     {
         if (ConfigPath is { } path)
         {
-            await LoadAsync(path).ConfigureAwait(true);
+            await _session.LoadAsync(path).ConfigureAwait(true);
             return;
         }
 
-        if (Workspace is not { } current)
-        {
-            return;
-        }
+        if (Workspace is not { } current) return;
 
-        var token = BeginLoad();
-
-        Result<BacklogWorkspace> again;
-        try
-        {
-            again = await _loader.ReloadAsync(current, token).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        if (token.IsCancellationRequested)
-        {
-            return;
-        }
-
-        if (again.IsFailure)
-        {
-            var error = again.Error!;
-            Clear();
-            ErrorText = $"{error.SafeMessage} ({error.Code})";
-            StatusText = "Could not reload that profile.";
-            return;
-        }
-
-        Adopt(again.Value);
+        await _session.ReloadAsync(current).ConfigureAwait(true);
     }
 
-
     /// <summary>
-    ///     Registers the profile, and reports a failure rather than dropping it.
-    ///     This was <c>_ = Profiles?.AddAsync(...)</c>. Everything that matters in
-    ///     <c>AddAsync</c> happens before its first await -- the entry is added, the
-    ///     registry is persisted, the collection is republished -- so an exception in
-    ///     any of it faults the returned task synchronously, and the discard threw
-    ///     that away. A switcher that silently never listed the open profile looked
-    ///     exactly like one that worked.
+    ///     Opens whichever profile the switcher just made active.
+    ///     The path comparison is what stops the cycle: <see cref="Adopt" /> registers
+    ///     the profile it opened, which is what raises this in the first place.
+    ///     Re-opening a profile that is already on screen would re-enter Adopt and
+    ///     discard the Plan the user was looking at.
     /// </summary>
-    private static async Task RegisterAsync(
-        ProfileRegistryViewModel profiles, BacklogWorkspace workspace)
+    private Task OnActiveProfileChangedAsync(ProfileEntry? profile, CancellationToken cancellationToken)
     {
-        try
-        {
-            await profiles.AddAsync(workspace, CancellationToken.None).ConfigureAwait(true);
-        }
-        catch (Exception ex)
-        {
-            profiles.ErrorText =
-                $"This profile could not be added to the switcher: {ex.Message} "
-                + "(profile.not_registered)";
-        }
+        if (profile is null || SamePath(profile.ConfigPath, ConfigPath)) return Task.CompletedTask;
+
+        return LoadAsync(profile.ConfigPath);
     }
 
     private void Clear()
     {
-        Nodes.Clear();
-        SelectedNode = null;
+        Tree.Clear();
         Workspace = null;
-        EpicCount = 0;
-        IssueCount = 0;
-        TaskCount = 0;
-        ProblemCount = 0;
         CodePrefix = string.Empty;
         BacklogFileName = string.Empty;
-        HasUnsavedEdits = false;
 
         // The per-profile surfaces go with it. A timeline or an iteration table
         // left standing after the profile it described was closed is the same
@@ -794,112 +478,5 @@ public sealed partial class MainWindowViewModel : ObservableObject
         History?.Clear();
         Sprints.Clear();
         Assignees.Clear();
-    }
-
-    private void Rebuild(BacklogWorkspace workspace, NodeIdentity? preferredSelection = null)
-    {
-        Nodes.Clear();
-
-        // BacklogParser returns a flat list in document order: an Epic owns every
-        // Issue that follows it until the next Epic. An Issue written above the
-        // first Epic is dropped upstream, exactly as the CLI drops it.
-        BacklogNodeViewModel? epic = null;
-        foreach (var item in workspace.Items)
-        {
-            var node = new BacklogNodeViewModel(item);
-            if (item.Level == BacklogLevel.Epic)
-            {
-                epic = node;
-                Nodes.Add(node);
-            }
-            else
-            {
-                epic?.Children.Add(node);
-            }
-        }
-
-        HookDirtyTracking(Nodes);
-
-        SelectedNode = FindNode(Nodes, preferredSelection)
-            ?? Nodes.FirstOrDefault()?.Children.FirstOrDefault()
-            ?? Nodes.FirstOrDefault();
-
-        EpicCount = workspace.Items.Count(i => i.Level == BacklogLevel.Epic);
-        IssueCount = workspace.Items.Count(i => i.Level == BacklogLevel.Issue);
-        TaskCount = workspace.Items.Sum(i => i.Bullets.Count);
-        ProblemCount = CountProblems(Nodes);
-        CodePrefix = workspace.Config.CodePrefix;
-        BacklogFileName = Path.GetFileName(workspace.BacklogPath);
-        HasUnsavedEdits = false;
-
-        StatusText =
-            $"{EpicCount} epics · {IssueCount} issues · {TaskCount} tasks · " +
-            $"{(ProblemCount == 0 ? "markup clean" : $"{ProblemCount} markup problems")} · " +
-            $"{BacklogFileName} · prefix {CodePrefix}";
-    }
-
-    /// <summary>Dirty nodes announce themselves so the header chip and the Plan gate stay current.</summary>
-    private void HookDirtyTracking(IEnumerable<BacklogNodeViewModel> nodes)
-    {
-        foreach (var node in nodes)
-        {
-            node.PropertyChanged += OnNodeChanged;
-            HookDirtyTracking(node.Children);
-        }
-    }
-
-    private void OnNodeChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(BacklogNodeViewModel.IsDirty))
-        {
-            HasUnsavedEdits = AnyDirty(Nodes);
-        }
-        else if (e.PropertyName == nameof(BacklogNodeViewModel.Problems))
-        {
-            // The header chip answers from the same live audit the tree badges do:
-            // what the user is looking at is what check-html would see. While the
-            // buffer is dirty, Apply is refused anyway; on save the workspace
-            // re-audits the file and the two agree again.
-            ProblemCount = CountProblems(Nodes);
-        }
-    }
-
-    private static bool AnyDirty(IEnumerable<BacklogNodeViewModel> nodes) =>
-        nodes.Any(node => node.IsDirty || AnyDirty(node.Children));
-
-    private static int CountProblems(IEnumerable<BacklogNodeViewModel> nodes) =>
-        nodes.Sum(n => n.Problems.Count + CountProblems(n.Children));
-
-    /// <summary>Finds a node again after a rebuild, by the identity that survives a re-parse.</summary>
-    private static BacklogNodeViewModel? FindNode(
-        IEnumerable<BacklogNodeViewModel> nodes, NodeIdentity? wanted)
-    {
-        if (wanted is not { } target)
-        {
-            return null;
-        }
-
-        foreach (var node in nodes)
-        {
-            if (NodeIdentity.Of(node) == target)
-            {
-                return node;
-            }
-
-            var found = FindNode(node.Children, wanted);
-            if (found is not null)
-            {
-                return found;
-            }
-        }
-
-        return null;
-    }
-
-    /// <summary>What a re-parse cannot change: the level, the issue code, the heading text.</summary>
-    private sealed record NodeIdentity(bool IsEpic, string? Code, string Title)
-    {
-        public static NodeIdentity? Of(BacklogNodeViewModel? node) =>
-            node is null ? null : new(node.IsEpic, node.Item.Code, node.Item.Title);
     }
 }
