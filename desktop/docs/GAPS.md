@@ -15,9 +15,11 @@ ticket for a gap closes it *only* when the gap was "no ticket owns this".
 | | Blocker | High | Medium | Low | Total |
 | --- | --- | --- | --- | --- | --- |
 | **Open** | 0 | 1 | 0 | 0 | 1 |
-| **Closed** | | 19 | 32 | 14 | 68 |
+| **Closed** | 3 | 19 | 32 | 15 | 69 |
 
-Total tracked: **69**. Counted from the tables below, not carried forward: the
+Total tracked: **70**. The 2026-09-19 sweep found the previous revision's
+Closed row under its own tables' count and its blocker cell empty; both are
+counted from the rows now. Counted from the tables below, not carried forward: the
 previous revision claimed 64 closures above an empty Closed section — the
 reconcile commit had dropped the table. Restored 2026-09-18 from the last
 complete register (`71e18c7~1`) plus the six rows that commit itself closed.
