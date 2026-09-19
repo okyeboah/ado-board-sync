@@ -23,7 +23,7 @@ reconcile commit had dropped the table. Restored 2026-09-18 from the last
 complete register (`71e18c7~1`) plus the six rows that commit itself closed.
 
 ## Closed
-## Closed
+
 
 | Gap | Severity | Closed by |
 | --- | --- | --- |
