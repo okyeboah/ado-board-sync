@@ -88,6 +88,26 @@ the guard enumerates appear as its fixture rows (`ParityCoverageTests` holds 14
 `[InlineData]` rows plus one guard fact; FSD §3.2.3's line-wrap and blank-line
 rules are exercised by the wrapping fixtures rather than enumerated as rows).
 
+## Round 4 — command-surface completeness, 2026-09-19
+
+Audited the desktop application against the CLI command by command and flag by
+flag: every command's inputs, options and behaviour had to exist on both sides
+or be explicitly scoped out of one. The CLI had grown `set-state` and `advance`
+after the FSD's rev-2 command table, and the table's own `sync` row had never
+been built.
+
+| # | Severity | Finding | Repair |
+| --- | --- | --- | --- |
+| 18 | Critical gap | FSD §3.3 and the PRD both name `sync` a Plan-producing command; the desktop offered no composite — the structural reconcile ran only as three separate reviews | ABSD-307: `BuildSync` plans the chain in its documented order, refuses on markup problems, and leaves the same board the CLI's `sync` leaves (apply-parity) |
+| 19 | Critical gap | The CLI's `set-state` and `advance` existed in no FSD or PRD list and had no desktop surface — CLI features the implementation documents did not know about | ABSD-308/309: both ported as Plan commands, the FSD §3.3 table and the PRD scope updated in the same change, apply-parity against the CLI for both |
+| 20 | Minor gap | `sprints --reset-on-missing` had no desktop equivalent, and being apply-time recovery it cannot appear in a Plan diff | Reviewed as a Sprints option, carried on the Plan, executed by `ApplyExecutor`; both sides' recovery paths pinned by their own unit tests, because end-board parity cannot produce a failed iteration patch |
+| 21 | Minor gap | `import` had no apply-parity scenario — the driver could not run it because import reads the CSV gen-csv writes — while STATUS counted "all nine commands" compared | The driver generates the CSV before import; `ImportLeavesTheSameBoardTheCliLeaves` compares end boards. The gate now holds 18 scenarios |
+| 22 | Minor gap | STATUS's totals table (24 Done / 22 Partial) contradicted its own rows (37 / 8) | Recounted from the rows; the new column is derived from them, and the drift is recorded in the table and in GAPS |
+
+Everything else agreed: `gen-csv`, `check-html`, `audit`, the nine planned
+commands and every option flag had a desktop equivalent before this round, and
+`-c`/profile handling is a superset.
+
 ## Standing rule
 
 Re-run this audit whenever a release slice closes, or whenever a ticket is added

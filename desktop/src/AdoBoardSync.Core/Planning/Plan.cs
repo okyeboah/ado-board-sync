@@ -28,21 +28,41 @@ public enum PlanCommand
 
     /// <summary>Create or update exactly one Issue and set exactly one sprint on it.</summary>
     SyncOne,
+
+    /// <summary>
+    ///     The CLI's <c>sync</c>: import, then resync, then resync-tasks — the structural
+    ///     reconcile chain planned as one reviewed write. FSD §3.3.4.
+    /// </summary>
+    Sync,
+
+    /// <summary>
+    ///     The CLI's <c>set-state</c>: move work items named by board id straight to a
+    ///     target state, ticking a leading <c>[ ]</c> title checkbox on the way to Done.
+    /// </summary>
+    SetState,
+
+    /// <summary>
+    ///     The CLI's <c>advance</c>: move Issues whose feature branches hold commits
+    ///     beyond the base ref from the start state to the working state. Never sets
+    ///     Done — merge detection fails in both directions, so completion stays a
+    ///     human decision.
+    /// </summary>
+    Advance
 }
 
 /// <summary>
-/// What a Plan row acts on. Almost everything is a work item; <c>sprints</c> also
-/// creates classification nodes, which are not work items and are not created by
-/// the same endpoint — so the row says which, rather than Apply guessing from the
-/// command.
+///     What a Plan row acts on. Almost everything is a work item; <c>sprints</c> also
+///     creates classification nodes, which are not work items and are not created by
+///     the same endpoint — so the row says which, rather than Apply guessing from the
+///     command.
 /// </summary>
 public enum PlanTarget
 {
     WorkItem,
-    IterationNode,
+    IterationNode
 }
 
-/// <summary>The iteration an <see cref="PlanTarget.IterationNode"/> row would create.</summary>
+/// <summary>The iteration an <see cref="PlanTarget.IterationNode" /> row would create.</summary>
 public sealed record IterationSpec(string Name, string? Start, string? Finish);
 
 /// <summary>What Apply would do to one item.</summary>
@@ -51,19 +71,18 @@ public enum PlanOperation
     Create,
     Update,
     Delete,
-    Unchanged,
+    Unchanged
 }
 
 /// <summary>One field Apply would write, with the value it replaces.</summary>
 public sealed record PlanFieldChange(string Field, string Before, string After);
 
 /// <summary>
-/// One row of a Plan: exactly one item, and exactly what would happen to it. Each
-/// row carries its own glyph and label — DESIGN-SYSTEM §5.3 forbids colour alone.
-///
-/// Task rows carry <see cref="Level"/> set to <see cref="BacklogLevel.Issue"/> and
-/// their parent Issue's code in <see cref="Code"/>; the code is what a reviewer
-/// scans for, and no surface distinguishes an "issue" badge from a task's.
+///     One row of a Plan: exactly one item, and exactly what would happen to it. Each
+///     row carries its own glyph and label — DESIGN-SYSTEM §5.3 forbids colour alone.
+///     Task rows carry <see cref="Level" /> set to <see cref="BacklogLevel.Issue" /> and
+///     their parent Issue's code in <see cref="Code" />; the code is what a reviewer
+///     scans for, and no surface distinguishes an "issue" badge from a task's.
 /// </summary>
 public sealed record PlanRow
 {
@@ -91,22 +110,29 @@ public sealed record PlanRow
     /// <summary>What this row acts on. Work items unless the row creates a sprint node.</summary>
     public PlanTarget Target { get; init; } = PlanTarget.WorkItem;
 
-    /// <summary>Set only on an <see cref="PlanTarget.IterationNode"/> row.</summary>
+    /// <summary>Set only on an <see cref="PlanTarget.IterationNode" /> row.</summary>
     public IterationSpec? Iteration { get; init; }
 
     /// <summary>
-    /// The Azure DevOps work item type this row would create, when the command's
-    /// level-to-type mapping is not enough to say. <c>close-children</c> and
-    /// <c>assign</c> touch Tasks and Issues in one Plan, so the row carries it.
+    ///     The Azure DevOps work item type this row would create, when the command's
+    ///     level-to-type mapping is not enough to say. <c>close-children</c> and
+    ///     <c>assign</c> touch Tasks and Issues in one Plan, so the row carries it.
     /// </summary>
     public string? WorkItemType { get; init; }
+
+    /// <summary>
+    ///     Why this row exists, when the field diff alone cannot say — the branch and
+    ///     commit count behind an <see cref="PlanCommand.Advance" /> row. Never written
+    ///     to the board; display only.
+    /// </summary>
+    public string? Detail { get; init; }
 
     public string Glyph => Operation switch
     {
         PlanOperation.Create => "+",
         PlanOperation.Update => "~",
         PlanOperation.Delete => "−",
-        _ => "=",
+        _ => "="
     };
 
     public string Label => Operation switch
@@ -114,7 +140,7 @@ public sealed record PlanRow
         PlanOperation.Create => "Create",
         PlanOperation.Update => "Update",
         PlanOperation.Delete => "Delete",
-        _ => "Unchanged",
+        _ => "Unchanged"
     };
 
     public string OperationText => $"{Glyph} {Label}";
@@ -130,13 +156,15 @@ public sealed record PlanRow
     public bool IsEpic => Level == BacklogLevel.Epic;
 
     /// <summary>
-    /// What a reviewer scans the row by. A sprint row is neither an Epic nor an
-    /// Issue — it creates a classification node — so it says so rather than
-    /// borrowing the Epic badge its <see cref="Level"/> would otherwise imply.
+    ///     What a reviewer scans the row by. A sprint row is neither an Epic nor an
+    ///     Issue — it creates a classification node — so it says so rather than
+    ///     borrowing the Epic badge its <see cref="Level" /> would otherwise imply.
     /// </summary>
     public string Badge => Target == PlanTarget.IterationNode
         ? "SPRINT"
-        : IsEpic ? "EPIC" : Code ?? "ISSUE";
+        : IsEpic
+            ? "EPIC"
+            : Code ?? "ISSUE";
 
     public string BoardReference => BoardId is { } id ? $"#{id}" : "new";
 
@@ -146,10 +174,10 @@ public sealed record PlanRow
 }
 
 /// <summary>
-/// An immutable, reviewed description of a set of writes. Apply consumes exactly
-/// this object and performs exactly the writes its rows imply (ARCHITECTURE.md
-/// §3.2). The two fingerprints are the stale-plan guard: if the backlog file or
-/// the board has moved since, Apply is refused.
+///     An immutable, reviewed description of a set of writes. Apply consumes exactly
+///     this object and performs exactly the writes its rows imply (ARCHITECTURE.md
+///     §3.2). The two fingerprints are the stale-plan guard: if the backlog file or
+///     the board has moved since, Apply is refused.
 /// </summary>
 public sealed record Plan
 {
@@ -158,13 +186,21 @@ public sealed record Plan
     public required IReadOnlyList<PlanRow> Rows { get; init; }
 
     /// <summary>
-    /// What the Plan wants the reviewer to know that no row can say: a configured
-    /// Issue code that is not on the board, a board Issue no sprint claims, a
-    /// missing <c>iterations</c> array. The CLI prints these as WARN/INFO lines
-    /// beside its plan; dropping them would hide the half of the answer that
-    /// explains why a Plan is smaller than expected.
+    ///     What the Plan wants the reviewer to know that no row can say: a configured
+    ///     Issue code that is not on the board, a board Issue no sprint claims, a
+    ///     missing <c>iterations</c> array. The CLI prints these as WARN/INFO lines
+    ///     beside its plan; dropping them would hide the half of the answer that
+    ///     explains why a Plan is smaller than expected.
     /// </summary>
     public IReadOnlyList<string> Notes { get; init; } = [];
+
+    /// <summary>
+    ///     The CLI's <c>--reset-on-missing</c>, reviewed with the Plan it belongs to:
+    ///     when a sprint-assignment write fails, reset that item's iteration path to
+    ///     the project root instead of leaving it pointing at a sprint that rejected
+    ///     it. Apply reads it from here so it executes exactly what was reviewed.
+    /// </summary>
+    public bool ResetOnMissing { get; init; }
 
     public bool HasNotes => Notes.Count > 0;
 
@@ -203,10 +239,32 @@ public sealed record Plan
         PlanCommand.SyncOne when CreateCount > 0 => "1 issue to create",
         PlanCommand.SyncOne when UpdateCount > 0 => $"{UpdateCount} change(s) to that issue",
         PlanCommand.SyncOne => "that issue already matches the backlog",
+        PlanCommand.Sync when CreateCount > 0 || UpdateCount > 0 || DeleteCount > 0 =>
+            $"{SyncParts()} in the structural reconcile",
+        PlanCommand.Sync => "the board already matches the backlog",
+        PlanCommand.SetState when UpdateCount > 0 =>
+            $"{UpdateCount} state change(s) to make, {UnchangedCount} already in the target state",
+        PlanCommand.SetState => "every named item is already in the target state",
+        PlanCommand.Advance when UpdateCount > 0 =>
+            $"{UpdateCount} Issue(s) to advance, {UnchangedCount} already past the start state",
+        PlanCommand.Advance => "no Issue has commit evidence beyond its start state",
         _ when DeleteCount > 0 && CreateCount > 0 =>
             $"{CreateCount} task(s) to create, {DeleteCount} to delete",
         _ when DeleteCount > 0 => $"{DeleteCount} stray task(s) to delete",
         _ when CreateCount > 0 => $"{CreateCount} missing task(s) to create",
-        _ => "every Task matches its backlog bullets",
+        _ => "every Task matches its backlog bullets"
     };
+
+    /// <summary>The create/update/delete half of a <see cref="PlanCommand.Sync" /> summary.</summary>
+    private string SyncParts()
+    {
+        var parts = new List<string>();
+        if (CreateCount > 0) parts.Add($"{CreateCount} to create");
+
+        if (UpdateCount > 0) parts.Add($"{UpdateCount} to update");
+
+        if (DeleteCount > 0) parts.Add($"{DeleteCount} to delete");
+
+        return string.Join(", ", parts);
+    }
 }

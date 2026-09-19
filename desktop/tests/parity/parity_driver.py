@@ -39,7 +39,7 @@ REPO_ROOT = os.path.dirname(  # <repo>
 sys.path.insert(0, os.path.join(REPO_ROOT, "src"))
 
 from ado_board_sync import config as cfgmod  # noqa: E402
-from ado_board_sync import htmlfmt, parser  # noqa: E402
+from ado_board_sync import commands, gitstate, htmlfmt, parser  # noqa: E402
 
 
 def _stdin_lines():
@@ -124,6 +124,19 @@ def _dump(client):
     ]
 
 
+def _sync_chain(cfg, client, args):
+    """cli.py's `sync` — the chain runs in its main(), so this mirrors the order
+    its dispatch branch uses over the same commands functions."""
+    items = parser.parse_board(cfg)
+    commands.gen_csv(cfg, args, items=items)
+    if commands.check_html(cfg, args, items=items):
+        return 1
+    commands.import_items(cfg, client, args)
+    commands.resync(cfg, client, args)
+    commands.resync_tasks(cfg, client, args)
+    return commands.audit(cfg, client, args)
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -192,21 +205,36 @@ def main():
         # The commands read their switches off an argparse Namespace. Building one
         # by hand keeps this driver out of the CLI's argument parsing, which is not
         # what the .NET side re-implements.
+        # The CLI's import reads the generated CSV, so it runs only after gen-csv —
+        # the same order the real `sync` chain uses.
         args = types.SimpleNamespace(
             go=True,
             assign_only=flags.get("assign-only", False),
             no_tasks=flags.get("no-tasks", False),
-            reset_on_missing=False,
+            reset_on_missing=flags.get("reset-on-missing", False),
             only_unassigned=flags.get("only-unassigned", False),
             assign_from_parent=flags.get("assign-from-parent", False),
             code=flags.get("code"),
             sprint=flags.get("sprint"),
+            ids=[int(x) for x in flags.get("ids", "").replace(",", " ").split() if x],
+            state=flags.get("state"),
+            no_tick=flags.get("no-tick", False),
+            repo=[r for r in flags.get("repo", "").split(",") if r],
+            base=flags.get("base", "origin/main"),
+            no_fetch=flags.get("no-fetch", False),
         )
 
         # Every command prints a report; the parity comparison is the board it
         # leaves behind, not the words, so the report goes nowhere.
         stdout, sys.stdout = sys.stdout, io.StringIO()
+        report = sys.stdout
         try:
+            # The CLI's import reads the generated CSV; gen-csv's report goes to
+            # the captured stream like every other command's.
+            if flags["command"] == "import":
+                commands.gen_csv(cfg, args)
+
+
             exit_code = {
                 "dedup": commands.dedup,
                 "assign": commands.assign,
@@ -216,11 +244,15 @@ def main():
                 "resync-tasks": commands.resync_tasks,
                 "audit": commands.audit,
                 "sync-one": commands.sync_one,
+                "import": commands.import_items,
+                "set-state": commands.set_state,
+                "sync": _sync_chain,
+                "advance": gitstate.advance,
             }[flags["command"]](cfg, client, args)
         finally:
             sys.stdout = stdout
 
-        out = {"exitCode": exit_code, "board": _dump(client)}
+        out = {"exitCode": exit_code, "board": _dump(client), "report": report.getvalue()}
     else:
         sys.exit(f"unknown mode: {mode}")
 
