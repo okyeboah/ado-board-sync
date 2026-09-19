@@ -1,6 +1,6 @@
 using AdoBoardSync.Core.Configuration;
 
-namespace AdoBoardSync.Infrastructure.Operations;
+namespace AdoBoardSync.Core.Operations;
 
 /// <summary>
 /// How a Board profile is named in the operation history and, later, in the

@@ -1,6 +1,6 @@
-using AdoBoardSync.Core.Board;
-using AdoBoardSync.Core.Backlog;
 using AdoBoardSync.Core.Agents;
+using AdoBoardSync.Core.Backlog;
+using AdoBoardSync.Core.Board;
 using AdoBoardSync.Core.Configuration;
 using AdoBoardSync.Core.Diagnostics;
 using AdoBoardSync.Core.Operations;
@@ -16,15 +16,14 @@ using Microsoft.Extensions.DependencyInjection;
 namespace AdoBoardSync.Desktop.Composition;
 
 /// <summary>
-/// The single composition root (ABSD-106). Every port declared in Core is bound to
-/// its adapter here and nowhere else, so a view or a view model never constructs
-/// one — which is what makes the seams real rather than decorative.
-///
-/// The two methods are split along the dependency direction they represent:
-/// <see cref="AddCore" /> registers what needs no platform, and
-/// <see cref="AddInfrastructure" /> the adapters that touch the filesystem and the
-/// network. They both live in this project because it is the only one that
-/// references both, and because Core must keep its zero-PackageReference csproj.
+///     The single composition root (ABSD-106). Every port declared in Core is bound to
+///     its adapter here and nowhere else, so a view or a view model never constructs
+///     one — which is what makes the seams real rather than decorative.
+///     The two methods are split along the dependency direction they represent:
+///     <see cref="AddCore" /> registers what needs no platform, and
+///     <see cref="AddInfrastructure" /> the adapters that touch the filesystem and the
+///     network. They both live in this project because it is the only one that
+///     references both, and because Core must keep its zero-PackageReference csproj.
 /// </summary>
 public static class AppServices
 {
@@ -108,6 +107,7 @@ public static class AppServices
             reload: path => s.GetRequiredService<ProfileLoader>().LoadAsync(path)));
         services.AddTransient(s => new AssigneePlanningViewModel(
             reload: path => s.GetRequiredService<ProfileLoader>().LoadAsync(path)));
+        services.AddSingleton<CredentialSession>();
         services.AddTransient<ApplyHistoryRecorder>();
         services.AddTransient<AgentAuthoringViewModel>();
 
@@ -129,9 +129,12 @@ public static class AppServices
     }
 
     /// <summary>The provider the application host builds once at startup.</summary>
-    public static ServiceProvider Build() => new ServiceCollection()
-        .AddCore()
-        .AddInfrastructure()
-        .AddViewModels()
-        .BuildServiceProvider();
+    public static ServiceProvider Build()
+    {
+        return new ServiceCollection()
+            .AddCore()
+            .AddInfrastructure()
+            .AddViewModels()
+            .BuildServiceProvider();
+    }
 }

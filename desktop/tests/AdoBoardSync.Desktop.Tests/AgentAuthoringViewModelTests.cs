@@ -2,7 +2,6 @@ using System.Text;
 using AdoBoardSync.Core.Agents;
 using AdoBoardSync.Core.Backlog;
 using AdoBoardSync.Core.Configuration;
-using AdoBoardSync.Core.Operations;
 using AdoBoardSync.Core.Results;
 using AdoBoardSync.Desktop.Services;
 using AdoBoardSync.Desktop.ViewModels;
@@ -10,47 +9,48 @@ using AdoBoardSync.Desktop.ViewModels;
 namespace AdoBoardSync.Desktop.Tests;
 
 /// <summary>
-/// The agent-authoring surface (ABSD-703, ABSD-705).
-///
-/// <see cref="AgentEditSessionTests" /> pins what happens to the file; this pins
-/// what the person deciding sees. Two things carry the weight. The three
-/// disclosure lines must describe the run that is about to happen — a sentence
-/// naming the previous provider or the previous scope is worse than none, because
-/// it is read as a promise. And accepting an edit must not shorten the path to the
-/// board: the surface can ask the shell to open the Plan, and that is all it can
-/// do (ABSD-705).
+///     The agent-authoring surface (ABSD-703, ABSD-705).
+///     <see cref="AgentEditSessionTests" /> pins what happens to the file; this pins
+///     what the person deciding sees. Two things carry the weight. The three
+///     disclosure lines must describe the run that is about to happen — a sentence
+///     naming the previous provider or the previous scope is worse than none, because
+///     it is read as a promise. And accepting an edit must not shorten the path to the
+///     board: the surface can ask the shell to open the Plan, and that is all it can
+///     do (ABSD-705).
 /// </summary>
-public class AgentAuthoringViewModelTests
+public partial class AgentAuthoringViewModelTests
 {
     private const string Original = """
-        ## Epic 1: Foundation
+                                    ## Epic 1: Foundation
 
-        Epic body.
+                                    Epic body.
 
-        ### PROJ-101 Â· First issue
+                                    ### PROJ-101 Â· First issue
 
-        First body.
+                                    First body.
 
-        - Do the first thing
-        """;
+                                    - Do the first thing
+                                    """;
 
     private const string Edited = """
-        ## Epic 1: Foundation
+                                  ## Epic 1: Foundation
 
-        Epic body.
+                                  Epic body.
 
-        ### PROJ-101 Â· First issue
+                                  ### PROJ-101 Â· First issue
 
-        First body.
+                                  First body.
 
-        - Do the first thing
-        - Do the second thing
-        """;
+                                  - Do the first thing
+                                  - Do the second thing
+                                  """;
 
-    private static BoardConfig Config() =>
-        BoardConfig.Parse(
+    private static BoardConfig Config()
+    {
+        return BoardConfig.Parse(
             """{"org":"acme","project":"widgets","code_prefix":"PROJ","board_file":"backlog.md"}""",
             Path.GetTempPath()).Value;
+    }
 
     private static BacklogWorkspace Workspace(string markdown = Original)
     {
@@ -61,119 +61,10 @@ public class AgentAuthoringViewModelTests
             FileStamp.For(DateTimeOffset.UnixEpoch, markdown));
     }
 
-    private static InstalledAgent Agent(int index = 0) =>
-        new(AgentProvider.Known[index], "/usr/local/bin/agent", "1.2.3");
-
-    // ------------------------------------------------------------- the fakes
-
-    private sealed class FakeRegistry : IAgentProviderRegistry
+    private static InstalledAgent Agent(int index = 0)
     {
-        public InstalledAgent[] Installed { get; set; } = [];
-
-        public Error? Failure { get; set; }
-
-        public Task<Result<IReadOnlyList<InstalledAgent>>> DiscoverAsync(
-            CancellationToken cancellationToken = default) =>
-            Task.FromResult<Result<IReadOnlyList<InstalledAgent>>>(
-                Failure is { } error ? error : Installed);
+        return new InstalledAgent(AgentProvider.Known[index], "/usr/local/bin/agent", "1.2.3");
     }
-
-    private sealed class FakeFileStore : IAgentEditFileStore
-    {
-        private readonly Dictionary<string, byte[]> _files = new(StringComparer.Ordinal);
-
-        public Error? WriteError { get; set; }
-
-        public FakeFileStore Seed(string path, string text)
-        {
-            _files[path] = Encoding.UTF8.GetBytes(text);
-            return this;
-        }
-
-        public string Text(string path) => Encoding.UTF8.GetString(_files[path]);
-
-        public Result<byte[]> ReadBytes(string path) =>
-            _files.TryGetValue(path, out var bytes)
-                ? bytes
-                : Error.NotFound("agent.edit.not_found", $"File not found: {path}.");
-
-        public Result<bool> WriteBytes(string path, byte[] bytes)
-        {
-            if (WriteError is { } error)
-            {
-                return error;
-            }
-
-            _files[path] = bytes;
-            return true;
-        }
-    }
-
-    private sealed class FakeRunner(
-        FakeFileStore files, string path, string? writes, AgentRunStatus status = AgentRunStatus.Succeeded)
-        : IAgentRunner
-    {
-        public List<AgentRunRequest> Requests { get; } = [];
-
-        public Task<Result<AgentRunResult>> RunAsync(
-            AgentRunRequest request, IProgress<string>? output = null,
-            CancellationToken cancellationToken = default)
-        {
-            Requests.Add(request);
-
-            if (writes is not null)
-            {
-                files.WriteBytes(path, Encoding.UTF8.GetBytes(writes));
-            }
-
-            output?.Report("working…");
-
-            return Task.FromResult<Result<AgentRunResult>>(new AgentRunResult
-            {
-                Status = status,
-                ExitCode = status == AgentRunStatus.Succeeded ? 0 : 1,
-                StandardOutput = "working…",
-            });
-        }
-    }
-
-    private sealed class FakeAgentHistory : IAgentRunHistory
-    {
-        private long _next = 1;
-
-        public List<AgentRunRecord> Records { get; } = [];
-
-        public List<(long Id, bool Accepted)> Verdicts { get; } = [];
-
-        public Task<Result<long>> RecordRunAsync(
-            AgentRunRecord record, CancellationToken cancellationToken = default)
-        {
-            var id = _next++;
-            Records.Add(record with { Id = id });
-            return Task.FromResult<Result<long>>(id);
-        }
-
-        public Task<Result<bool>> RecordVerdictAsync(
-            long runId, bool accepted, DateTimeOffset finishedAt, CancellationToken cancellationToken = default)
-        {
-            Verdicts.Add((runId, accepted));
-            return Task.FromResult<Result<bool>>(true);
-        }
-
-        public Task<Result<IReadOnlyList<AgentRunRecord>>> ListRunsAsync(
-            string profileKey, int limit, CancellationToken cancellationToken = default)
-        {
-            AgentRunRecord[] matching = [.. Records.Where(r => r.ProfileKey == profileKey).Take(limit)];
-            return Task.FromResult<Result<IReadOnlyList<AgentRunRecord>>>(matching);
-        }
-    }
-
-    private sealed record Subject(
-        AgentAuthoringViewModel Model,
-        FakeFileStore Files,
-        FakeAgentHistory History,
-        FakeRegistry Registry,
-        BacklogWorkspace Workspace);
 
     private static Subject Build(
         string? agentWrites = Edited,
@@ -193,22 +84,18 @@ public class AgentAuthoringViewModelTests
     }
 
     /// <summary>
-    /// Waits for the agent's streamed output to arrive.
-    ///
-    /// <see cref="Progress{T}" /> delivers on the SynchronizationContext captured
-    /// when it was constructed. Under Avalonia that is the dispatcher, so a line
-    /// reported during the run is on screen by the time the run returns. A test has
-    /// no context, so delivery is posted to the thread pool and lands some time
-    /// after — asserting on it synchronously passes or fails with the scheduler.
+    ///     Waits for the agent's streamed output to arrive.
+    ///     <see cref="Progress{T}" /> delivers on the SynchronizationContext captured
+    ///     when it was constructed. Under Avalonia that is the dispatcher, so a line
+    ///     reported during the run is on screen by the time the run returns. A test has
+    ///     no context, so delivery is posted to the thread pool and lands some time
+    ///     after — asserting on it synchronously passes or fails with the scheduler.
     /// </summary>
     private static async Task<IReadOnlyList<string>> OutputAsync(
         AgentAuthoringViewModel model, int expected = 1)
     {
         var deadline = DateTime.UtcNow.AddSeconds(5);
-        while (model.Output.Count < expected && DateTime.UtcNow < deadline)
-        {
-            await Task.Delay(5);
-        }
+        while (model.Output.Count < expected && DateTime.UtcNow < deadline) await Task.Delay(5);
 
         return [.. model.Output];
     }
@@ -228,7 +115,7 @@ public class AgentAuthoringViewModelTests
     [Fact]
     public async Task DiscoveryOffersTheInstalledAgentsAndSelectsTheFirst()
     {
-        var subject = Build(installed: [Agent(0), Agent(1)]);
+        var subject = Build(installed: [Agent(), Agent(1)]);
 
         await subject.Model.DiscoverAsync();
 
@@ -321,16 +208,13 @@ public class AgentAuthoringViewModelTests
     {
         // The statements are bound, not read once. A stale one describes a run that
         // is not the one about to happen.
-        var subject = Build(installed: [Agent(0), Agent(1)]);
+        var subject = Build(installed: [Agent(), Agent(1)]);
         await subject.Model.DiscoverAsync();
 
         var restated = 0;
         subject.Model.PropertyChanged += (_, e) =>
         {
-            if (e.PropertyName == nameof(AgentAuthoringViewModel.ProviderStatement))
-            {
-                restated++;
-            }
+            if (e.PropertyName == nameof(AgentAuthoringViewModel.ProviderStatement)) restated++;
         };
 
         subject.Model.SelectedProvider = subject.Model.Providers[1];
@@ -467,163 +351,118 @@ public class AgentAuthoringViewModelTests
         Assert.Single(subject.History.Records);
     }
 
-    [Fact]
-    public async Task ARunThatChangedNothingIsSaidToHaveChangedNothing()
+    // ------------------------------------------------------------- the fakes
+
+    private sealed class FakeRegistry : IAgentProviderRegistry
     {
-        var subject = await ReadyAsync(agentWrites: Original);
+        public InstalledAgent[] Installed { get; set; } = [];
 
-        await subject.Model.RunAsync();
+        public Error? Failure { get; set; }
 
-        Assert.False(subject.Model.HasReview);
-        Assert.Empty(subject.Model.DiffLines);
-        Assert.Contains("no change", subject.Model.StatusText, StringComparison.OrdinalIgnoreCase);
+        public Task<Result<IReadOnlyList<InstalledAgent>>> DiscoverAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<Result<IReadOnlyList<InstalledAgent>>>(
+                Failure is { } error ? error : Installed);
+        }
     }
 
-    [Fact]
-    public async Task ARunThatFailedRestoresTheFileAndOffersNoDiff()
+    private sealed class FakeFileStore : IAgentEditFileStore
     {
-        var subject = await ReadyAsync(status: AgentRunStatus.Failed);
+        private readonly Dictionary<string, byte[]> _files = new(StringComparer.Ordinal);
 
-        await subject.Model.RunAsync();
+        public Error? WriteError { get; set; }
 
-        Assert.False(subject.Model.HasReview);
-        Assert.Equal(Original, subject.Files.Text(subject.Workspace.BacklogPath));
+        public Result<byte[]> ReadBytes(string path)
+        {
+            return _files.TryGetValue(path, out var bytes)
+                ? bytes
+                : Error.NotFound("agent.edit.not_found", $"File not found: {path}.");
+        }
+
+        public Result<bool> WriteBytes(string path, byte[] bytes)
+        {
+            if (WriteError is { } error) return error;
+
+            _files[path] = bytes;
+            return true;
+        }
+
+        public FakeFileStore Seed(string path, string text)
+        {
+            _files[path] = Encoding.UTF8.GetBytes(text);
+            return this;
+        }
+
+        public string Text(string path)
+        {
+            return Encoding.UTF8.GetString(_files[path]);
+        }
     }
 
-    [Fact]
-    public async Task AnUnparseableEditIsRefusedWithItsReasonRatherThanShown()
+    private sealed class FakeRunner(
+        FakeFileStore files,
+        string path,
+        string? writes,
+        AgentRunStatus status = AgentRunStatus.Succeeded)
+        : IAgentRunner
     {
-        // A diff of a backlog that no longer parses is a diff of something this app
-        // cannot plan from, and accepting it would break the profile.
-        var subject = await ReadyAsync(agentWrites: "not a backlog at all\n");
+        public List<AgentRunRequest> Requests { get; } = [];
 
-        await subject.Model.RunAsync();
+        public Task<Result<AgentRunResult>> RunAsync(
+            AgentRunRequest request, IProgress<string>? output = null,
+            CancellationToken cancellationToken = default)
+        {
+            Requests.Add(request);
 
-        Assert.False(subject.Model.HasReview);
-        Assert.True(subject.Model.HasError);
-        Assert.Equal(Original, subject.Files.Text(subject.Workspace.BacklogPath));
+            if (writes is not null) files.WriteBytes(path, Encoding.UTF8.GetBytes(writes));
+
+            output?.Report("working…");
+
+            return Task.FromResult<Result<AgentRunResult>>(new AgentRunResult
+            {
+                Status = status,
+                ExitCode = status == AgentRunStatus.Succeeded ? 0 : 1,
+                StandardOutput = "working…"
+            });
+        }
     }
 
-    // ---------------------------------------------------------- the verdict
-
-    [Fact]
-    public async Task AcceptingKeepsTheEditRecordsTheVerdictAndHandsOverTheParse()
+    private sealed class FakeAgentHistory : IAgentRunHistory
     {
-        var subject = await ReadyAsync();
-        await subject.Model.RunAsync();
+        private long _next = 1;
 
-        AgentEditReview? handed = null;
-        subject.Model.EditAccepted = review => handed = review;
+        public List<AgentRunRecord> Records { get; } = [];
 
-        await subject.Model.AcceptAsync();
+        public List<(long Id, bool Accepted)> Verdicts { get; } = [];
 
-        Assert.Equal(Edited, subject.Files.Text(subject.Workspace.BacklogPath));
-        Assert.Equal([(1L, true)], subject.History.Verdicts);
-        Assert.NotNull(handed);
-        Assert.False(subject.Model.HasReview);
-        Assert.Empty(subject.Model.DiffLines);
+        public Task<Result<long>> RecordRunAsync(
+            AgentRunRecord record, CancellationToken cancellationToken = default)
+        {
+            var id = _next++;
+            Records.Add(record with { Id = id });
+            return Task.FromResult<Result<long>>(id);
+        }
+
+        public Task<Result<bool>> RecordVerdictAsync(
+            long runId, bool accepted, DateTimeOffset finishedAt, CancellationToken cancellationToken = default)
+        {
+            Verdicts.Add((runId, accepted));
+            return Task.FromResult<Result<bool>>(true);
+        }
+
+        public Task<Result<IReadOnlyList<AgentRunRecord>>> ListRunsAsync(
+            string profileKey, int limit, CancellationToken cancellationToken = default)
+        {
+            AgentRunRecord[] matching = [.. Records.Where(r => r.ProfileKey == profileKey).Take(limit)];
+            return Task.FromResult<Result<IReadOnlyList<AgentRunRecord>>>(matching);
+        }
     }
 
-    [Fact]
-    public async Task RejectingPutsTheFileBackAndRecordsTheVerdict()
-    {
-        var subject = await ReadyAsync();
-        await subject.Model.RunAsync();
-
-        await subject.Model.RejectAsync();
-
-        Assert.Equal(Original, subject.Files.Text(subject.Workspace.BacklogPath));
-        Assert.Equal([(1L, false)], subject.History.Verdicts);
-        Assert.False(subject.Model.HasReview);
-        Assert.Contains("exactly as it was", subject.Model.StatusText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task AFailedRestoreIsReportedRatherThanClaimingTheBacklogIsBack()
-    {
-        var subject = await ReadyAsync();
-        await subject.Model.RunAsync();
-        subject.Files.WriteError = Error.SourceFailure("agent.edit.unwritable", "read-only volume");
-
-        await subject.Model.RejectAsync();
-
-        Assert.True(subject.Model.HasError);
-        Assert.Contains("agent.edit.unwritable", subject.Model.ErrorText);
-        Assert.Contains("could not be put back", subject.Model.StatusText, StringComparison.Ordinal);
-    }
-
-    [Fact]
-    public async Task AVerdictWithNothingUnderReviewDoesNothing()
-    {
-        var subject = await ReadyAsync();
-
-        await subject.Model.AcceptAsync();
-        await subject.Model.RejectAsync();
-
-        Assert.Empty(subject.History.Verdicts);
-        Assert.Equal(Original, subject.Files.Text(subject.Workspace.BacklogPath));
-    }
-
-    // ------------------------------------------------------ the Plan handoff
-
-    [Fact]
-    public async Task PlanningIsOfferedOnlyAfterAnEditWasAccepted()
-    {
-        var subject = await ReadyAsync();
-        Assert.False(subject.Model.CanPlan);
-
-        await subject.Model.RunAsync();
-        Assert.False(subject.Model.CanPlan);
-
-        await subject.Model.AcceptAsync();
-        Assert.True(subject.Model.CanPlan);
-    }
-
-    [Fact]
-    public async Task AskingForAPlanOnlyAsksTheShellToOpenIt()
-    {
-        // ABSD-705. The request carries no plan, no approval and no board write —
-        // an agent's involvement removes no step from the Plan/Apply gate.
-        var subject = await ReadyAsync();
-        await subject.Model.RunAsync();
-        await subject.Model.AcceptAsync();
-
-        var asked = 0;
-        subject.Model.PlanRequested = () => asked++;
-
-        subject.Model.RequestPlan();
-
-        Assert.Equal(1, asked);
-    }
-
-    [Fact]
-    public async Task AskingForAPlanBeforeAnAcceptAsksForNothing()
-    {
-        var subject = await ReadyAsync();
-        await subject.Model.RunAsync();
-
-        var asked = 0;
-        subject.Model.PlanRequested = () => asked++;
-
-        subject.Model.RequestPlan();
-
-        Assert.Equal(0, asked);
-    }
-
-    [Fact]
-    public async Task StartingASecondRunClearsTheFirstRunsOutputAndVerdict()
-    {
-        // A second run that inherited the first one's output would be read as its
-        // own, and the accepted-edit flag would still be offering a stale Plan.
-        var subject = await ReadyAsync();
-        await subject.Model.RunAsync();
-        await subject.Model.AcceptAsync();
-        Assert.True(subject.Model.CanPlan);
-
-        subject.Model.Prompt = "Do something else.";
-        await subject.Model.RunAsync();
-
-        Assert.Equal("working…", Assert.Single(await OutputAsync(subject.Model)));
-        Assert.False(subject.Model.HasAcceptedEdit);
-    }
+    private sealed record Subject(
+        AgentAuthoringViewModel Model,
+        FakeFileStore Files,
+        FakeAgentHistory History,
+        FakeRegistry Registry,
+        BacklogWorkspace Workspace);
 }

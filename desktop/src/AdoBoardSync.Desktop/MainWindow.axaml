@@ -121,42 +121,42 @@
                          without the user learning a colour code. -->
                     <StackPanel DockPanel.Dock="Top" Orientation="Horizontal"
                                 Spacing="{StaticResource SpacingChip}"
-                                IsVisible="{Binding HasBacklog}"
+                                IsVisible="{Binding Tree.HasBacklog}"
                                 Margin="{StaticResource SubsectionMargin}">
                         <Border Classes="chip">
                             <TextBlock Classes="caption">
-                                <Run Text="{Binding EpicCount}" /><Run Text=" epics" />
+                                <Run Text="{Binding Tree.EpicCount}" /><Run Text=" epics" />
                             </TextBlock>
                         </Border>
                         <Border Classes="chip">
                             <TextBlock Classes="caption">
-                                <Run Text="{Binding IssueCount}" /><Run Text=" issues" />
+                                <Run Text="{Binding Tree.IssueCount}" /><Run Text=" issues" />
                             </TextBlock>
                         </Border>
                         <Border Classes="chip">
                             <TextBlock Classes="caption">
-                                <Run Text="{Binding TaskCount}" /><Run Text=" tasks" />
+                                <Run Text="{Binding Tree.TaskCount}" /><Run Text=" tasks" />
                             </TextBlock>
                         </Border>
                     </StackPanel>
 
                     <TextBlock DockPanel.Dock="Bottom" Classes="caption"
                                Text="{Binding BacklogFileName}"
-                               IsVisible="{Binding HasBacklog}"
+                               IsVisible="{Binding Tree.HasBacklog}"
                                TextTrimming="CharacterEllipsis"
                                Margin="{StaticResource SubsectionMargin}" />
 
                     <!-- Empty state: no profile open yet. -->
-                    <StackPanel Classes="statePanel" IsVisible="{Binding !HasBacklog}">
+                    <StackPanel Classes="statePanel" IsVisible="{Binding !Tree.HasBacklog}">
                         <TextBlock Classes="stateTitle" Text="No backlog open" />
                         <TextBlock Classes="stateBody"
                                    Text="Open a board.config.json, or describe the board yourself — both routes are on the right." />
                     </StackPanel>
 
                     <TreeView Classes="backlog"
-                              IsVisible="{Binding HasBacklog}"
-                              ItemsSource="{Binding Nodes}"
-                              SelectedItem="{Binding SelectedNode, Mode=TwoWay}"
+                              IsVisible="{Binding Tree.HasBacklog}"
+                              ItemsSource="{Binding Tree.Nodes}"
+                              SelectedItem="{Binding Tree.SelectedNode, Mode=TwoWay}"
                               ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                               Margin="0,8,0,0">
                         <TreeView.ItemTemplate>
@@ -200,10 +200,10 @@
                         </StackPanel>
                         <StackPanel Grid.Column="1" Orientation="Horizontal"
                                     Spacing="{StaticResource SpacingS}"
-                                    IsVisible="{Binding HasBacklog}">
+                                    IsVisible="{Binding Tree.HasBacklog}">
                             <!-- Glyph + label, never colour alone (§5.3): an
                                  unsaved buffer is a state, not a decoration. -->
-                            <Border Classes="chip" IsVisible="{Binding HasUnsavedEdits}"
+                            <Border Classes="chip" IsVisible="{Binding Tree.HasUnsavedEdits}"
                                     ToolTip.Tip="The editor holds changes the backlog file does not. Save (Ctrl+S) before generating a Plan.">
                                 <StackPanel Orientation="Horizontal" Spacing="{StaticResource SpacingXS}">
                                     <TextBlock Classes="icon" Text="●"
@@ -212,9 +212,9 @@
                                 </StackPanel>
                             </Border>
                             <Border Classes="badge"
-                                    Classes.ok="{Binding !HasProblems}"
-                                    Classes.error="{Binding HasProblems}">
-                                <TextBlock Classes="onAccent" Text="{Binding MarkupSummary}" />
+                                    Classes.ok="{Binding !Tree.HasProblems}"
+                                    Classes.error="{Binding Tree.HasProblems}">
+                                <TextBlock Classes="onAccent" Text="{Binding Tree.MarkupSummary}" />
                             </Border>
                         </StackPanel>
                     </Grid>
@@ -287,7 +287,7 @@
                         <StackPanel.IsVisible>
                             <MultiBinding Converter="{x:Static BoolConverters.And}">
                                 <Binding Path="ShowBacklog" />
-                                <Binding Path="SelectedNode"
+                                <Binding Path="Tree.SelectedNode"
                                          Converter="{x:Static conv:ObjectConverters.IsNull}" />
                             </MultiBinding>
                         </StackPanel.IsVisible>
@@ -300,12 +300,12 @@
                          product, so it gets an equal half, not a side panel. -->
                     <Grid Margin="{StaticResource PagePadding}"
                           RowDefinitions="Auto,*,Auto"
-                          DataContext="{Binding SelectedNode}"
+                          DataContext="{Binding Tree.SelectedNode}"
                           x:DataType="vm:BacklogNodeViewModel">
                         <Grid.IsVisible>
                             <MultiBinding Converter="{x:Static BoolConverters.And}">
                                 <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).ShowBacklog" />
-                                <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).SelectedNode"
+                                <Binding Path="$parent[Window].((vm:MainWindowViewModel)DataContext).Tree.SelectedNode"
                                          Converter="{x:Static conv:ObjectConverters.IsNotNull}" />
                             </MultiBinding>
                         </Grid.IsVisible>
