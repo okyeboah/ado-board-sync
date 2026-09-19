@@ -71,9 +71,19 @@ uv.lock
 .agent/
 .DS_Store
 
-# This repository keeps its agent adapter stubs out of git (.claude/settings.json, .mcp.json, AGENTS.md, CLAUDE.md);
-# the rest follow the same convention, because they are the same
-# artifact and a half-committed set matches no harness.
+# Agent adapter stubs this repository does not track. Introducing agent
+# tooling into a repository that carries none is the owner's decision,
+# so the files stay local and are ignored rather than committed.
+.agents/skills/
+.claude/
 .codex/
+.github/hooks/
 .zcode/
+.mcp.json
+AGENTS.md
+CLAUDE.md
+
+# register_guards.py writes one backup per adapter before it merges;
+# it is a recovery copy, not source.
+*.bak-guards
 # agent-brain:repo:end
