@@ -36,6 +36,13 @@ public sealed partial class PlanViewModel : ObservableObject
     private readonly BoardGatewayFactory _gatewayFactory;
 
     /// <summary>
+    ///     The local-git evidence source <c>advance</c> plans from. Resolved from the
+    ///     composition root like the gateway factory; the stand-in refuses loudly
+    ///     when nothing was supplied.
+    /// </summary>
+    private readonly IGitEvidenceSource _gitEvidence;
+
+    /// <summary>
     ///     Records each Apply in the local history (ABSD-501). Optional: an app
     ///     with no history store still applies, it simply keeps no record — the
     ///     recorder itself already refuses to let a store failure fail a write.
@@ -55,6 +62,9 @@ public sealed partial class PlanViewModel : ObservableObject
     /// <summary>Skip iteration-node creation and only set paths. The CLI's <c>--assign-only</c>.</summary>
     [ObservableProperty] private bool _assignOnly;
 
+    /// <summary>The ref <c>advance</c> counts commits against.</summary>
+    [ObservableProperty] private string _baseRef = "origin/main";
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsImport))]
     [NotifyPropertyChangedFor(nameof(IsResync))]
@@ -62,6 +72,8 @@ public sealed partial class PlanViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(SelectedCommand))]
     [NotifyPropertyChangedFor(nameof(NeedsCode))]
     [NotifyPropertyChangedFor(nameof(NeedsSprint))]
+    [NotifyPropertyChangedFor(nameof(NeedsIds))]
+    [NotifyPropertyChangedFor(nameof(NeedsRepos))]
     [NotifyPropertyChangedFor(nameof(HasOptions))]
     private PlanCommand _command = PlanCommand.Import;
 
@@ -69,6 +81,9 @@ public sealed partial class PlanViewModel : ObservableObject
 
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasError))]
     private string? _errorText;
+
+    /// <summary>Fetch each repository before probing, so the refs are not stale.</summary>
+    [ObservableProperty] private bool _fetch = true;
 
     /// <summary>
     ///     True when a token resolved from some source. Every board-reading and
@@ -93,6 +108,9 @@ public sealed partial class PlanViewModel : ObservableObject
     /// </summary>
     [ObservableProperty] private string _issueCode = string.Empty;
 
+    /// <summary>Leave a leading <c>[ ]</c> title checkbox alone. The CLI's <c>--no-tick</c>.</summary>
+    [ObservableProperty] private bool _noTick;
+
     /// <summary>Never overwrite an assignee somebody set. The CLI's <c>--only-unassigned</c>.</summary>
     [ObservableProperty] private bool _onlyUnassigned;
 
@@ -102,6 +120,12 @@ public sealed partial class PlanViewModel : ObservableObject
     [NotifyPropertyChangedFor(nameof(PlanSummary))]
     private Plan? _plan;
 
+    /// <summary>Repository paths <c>advance</c> probes, comma- or newline-separated.</summary>
+    [ObservableProperty] private string _repoPaths = string.Empty;
+
+    /// <summary>Reset a failed iteration write to the project root. The CLI's <c>--reset-on-missing</c>.</summary>
+    [ObservableProperty] private bool _resetOnMissing;
+
     [ObservableProperty] [NotifyPropertyChangedFor(nameof(HasToken))]
     private string _sessionToken = string.Empty;
 
@@ -110,18 +134,26 @@ public sealed partial class PlanViewModel : ObservableObject
 
     [ObservableProperty] private string _statusText = "No Plan generated yet.";
 
+    /// <summary>The state <c>set-state</c> targets. Blank means the configured terminal state.</summary>
+    [ObservableProperty] private string _targetState = string.Empty;
+
+    /// <summary>Board ids <c>set-state</c> moves, typed the way the CLI takes them.</summary>
+    [ObservableProperty] private string _workItemIds = string.Empty;
+
     public PlanViewModel(
         BoardGatewayFactory? gatewayFactory = null,
         ICredentialStore? credentialStore = null,
         ApplyHistoryRecorder? recorder = null,
         DiagnosticRedaction? redaction = null,
-        IDiagnostics? diagnostics = null)
+        IDiagnostics? diagnostics = null,
+        IGitEvidenceSource? gitEvidence = null)
     {
         // Not `pat => new AzureDevOpsGateway(pat)`. The composition root registers
         // the delegate and injects it here; a default that builds a real connector
         // hides a missing registration behind a live call to somebody's board.
         _gatewayFactory = gatewayFactory
                           ?? (_ => new UnconfiguredBoardGateway("no factory was supplied to this view model"));
+        _gitEvidence = gitEvidence ?? new UnconfiguredGitEvidenceSource();
         _credentials = new CredentialSession(credentialStore);
         _recorder = recorder;
         _redaction = redaction;
@@ -193,6 +225,10 @@ public sealed partial class PlanViewModel : ObservableObject
 
     public bool NeedsSprint => SelectedCommand.NeedsSprint;
 
+    public bool NeedsIds => SelectedCommand.NeedsIds;
+
+    public bool NeedsRepos => SelectedCommand.NeedsRepos;
+
     public IReadOnlyList<PlanCommandOption> Commands { get; } = PlanCommandCatalog.All;
 
     public bool HasOptions => SelectedCommand.HasOptions;
@@ -203,32 +239,6 @@ public sealed partial class PlanViewModel : ObservableObject
     public bool HasNotes => Notes.Count > 0;
 
     public string PlanSummary => Plan?.Summary ?? string.Empty;
-
-    public string ConfirmQuestion => Plan is null
-        ? string.Empty
-        : Command switch
-        {
-            PlanCommand.Import =>
-                $"Create {Plan.CreateCount} work item{(Plan.CreateCount == 1 ? string.Empty : "s")} in Azure DevOps?",
-            PlanCommand.Resync =>
-                $"Update {Plan.UpdateCount} work item{(Plan.UpdateCount == 1 ? string.Empty : "s")} in Azure DevOps?",
-            _ => ConfirmTasksQuestion(Plan)
-        };
-
-    private static string ConfirmTasksQuestion(Plan plan)
-    {
-        var parts = new List<string>();
-        if (plan.CreateCount > 0)
-            parts.Add($"create {plan.CreateCount} task{(plan.CreateCount == 1 ? string.Empty : "s")}");
-
-        if (plan.DeleteCount > 0) parts.Add($"delete {plan.DeleteCount}");
-
-        return parts.Count > 0
-            ? char.ToUpperInvariant(parts[0][0]) + parts[0][1..]
-                                                 + (parts.Count > 1 ? " and " + parts[1] : string.Empty)
-                                                 + " in Azure DevOps?"
-            : "No Task changes to apply.";
-    }
 
     /// <summary>Picks a command. The selector binds <see cref="SelectedCommand" /> instead.</summary>
     public void Choose(PlanCommand command)
@@ -262,6 +272,24 @@ public sealed partial class PlanViewModel : ObservableObject
     {
         if (BlockedByUnsavedEdits("generating a Plan")) return;
 
+        // Typed inputs are checked before the credential is resolved, matching the
+        // CLI: argparse refuses a command line with no ids or no repository before
+        // any authentication happens.
+        if (Command == PlanCommand.SetState && ParsedWorkItemIds().Count == 0)
+        {
+            ErrorText = "Type at least one work item id — the board numbers, separated by "
+                        + "commas or spaces. (setstate.no_ids)";
+            StatusText = "No work item ids to plan.";
+            return;
+        }
+
+        if (Command == PlanCommand.Advance && ParsedRepoPaths().Count == 0)
+        {
+            ErrorText = "Type at least one repository path to probe. (advance.no_repo)";
+            StatusText = "No repositories to probe.";
+            return;
+        }
+
         var token = await ResolveTokenAsync(workspace.Config, cancellationToken).ConfigureAwait(true);
         if (token is null)
         {
@@ -291,7 +319,25 @@ public sealed partial class PlanViewModel : ObservableObject
                     return;
                 }
 
-                var built = Build(workspace, snapshot.Value);
+                GitProbeReport? evidence = null;
+                if (Command == PlanCommand.Advance)
+                {
+                    var probed = await _gitEvidence.ProbeAsync(
+                        ParsedRepoPaths(), BaseRef.Trim(), Fetch,
+                        workspace.Config.IssueCodeRegex.ToString(), cancellationToken);
+
+                    if (probed.IsFailure)
+                    {
+                        ErrorText = $"{probed.Error!.SafeMessage} ({probed.Error.Code})";
+                        StatusText = "Could not probe the repositories.";
+                        _diagnostics.OperationFailed("plan", probed.Error);
+                        return;
+                    }
+
+                    evidence = probed.Value;
+                }
+
+                var built = Build(workspace, snapshot.Value, evidence);
                 if (built.IsFailure)
                 {
                     ErrorText = $"{built.Error!.SafeMessage} ({built.Error.Code})";
@@ -330,7 +376,7 @@ public sealed partial class PlanViewModel : ObservableObject
     ///     port, which is what makes "generating a Plan writes nothing" a property of
     ///     the code rather than a habit.
     /// </summary>
-    private Result<Plan> Build(BacklogWorkspace workspace, BoardSnapshot snapshot)
+    private Result<Plan> Build(BacklogWorkspace workspace, BoardSnapshot snapshot, GitProbeReport? evidence = null)
     {
         var config = workspace.Config;
         var items = workspace.Items;
@@ -341,15 +387,45 @@ public sealed partial class PlanViewModel : ObservableObject
             PlanCommand.Import => PlanBuilder.BuildImport(config, items, snapshot, markdown),
             PlanCommand.Resync => PlanBuilder.BuildResync(config, items, snapshot, markdown),
             PlanCommand.ResyncTasks => PlanBuilder.BuildResyncTasks(config, items, snapshot, markdown),
+            PlanCommand.Sync => PlanBuilder.BuildSync(config, items, snapshot, markdown),
             PlanCommand.Dedup => PlanBuilder.BuildDedup(config, snapshot, markdown),
             PlanCommand.Sprints => PlanBuilder.BuildSprints(
-                config, snapshot, markdown, AssignOnly, IncludeTasks),
+                config, snapshot, markdown, AssignOnly, IncludeTasks, ResetOnMissing),
             PlanCommand.Assign => PlanBuilder.BuildAssign(
                 config, snapshot, markdown, IncludeTasks, OnlyUnassigned),
             PlanCommand.CloseChildren => PlanBuilder.BuildCloseChildren(
                 config, snapshot, markdown, AssignFromParent),
+            PlanCommand.SetState => PlanBuilder.BuildSetState(
+                config, snapshot, markdown, ParsedWorkItemIds(), TargetState, NoTick),
+            PlanCommand.Advance when evidence is { } probe => PlanBuilder.BuildAdvance(
+                config, items, snapshot, markdown, probe, BaseRef.Trim()),
+            PlanCommand.Advance => Error.SourceFailure(
+                "advance.not_probed",
+                "The repositories were not probed, so there is no evidence to plan from."),
             _ => PlanBuilder.BuildSyncOne(config, items, snapshot, markdown, IssueCode, SprintName)
         };
+    }
+
+    /// <summary>The board ids typed for <c>set-state</c>, in any mix of commas, spaces and newlines.</summary>
+    private IReadOnlyList<int> ParsedWorkItemIds()
+    {
+        var ids = new List<int>();
+        foreach (var token in WorkItemIds.Split(
+                     [',', ';', ' ', '\n', '\t'],
+                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            if (int.TryParse(token, out var id))
+                ids.Add(id);
+
+        return ids;
+    }
+
+    /// <summary>The repository paths typed for <c>advance</c>, in any mix of commas, semicolons and newlines.</summary>
+    private IReadOnlyList<string> ParsedRepoPaths()
+    {
+        var paths = RepoPaths.Split(
+            [',', ';', '\n'],
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return paths.Where(p => p.Length > 0).ToArray();
     }
 
     /// <summary>

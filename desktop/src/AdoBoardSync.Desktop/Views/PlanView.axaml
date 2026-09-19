@@ -18,7 +18,7 @@
                 <ListBox ItemsSource="{Binding BoardPlan.Commands}"
                          SelectedItem="{Binding BoardPlan.SelectedCommand, Mode=TwoWay}"
                          IsEnabled="{Binding !BoardPlan.IsBusy}"
-                         MaxHeight="196">
+                         MaxHeight="360">
                     <ListBox.ItemTemplate>
                         <DataTemplate x:DataType="vm:PlanCommandOption">
                             <Grid ColumnDefinitions="160,*,Auto"
@@ -54,6 +54,39 @@
                            Text="One of the iterations named in the profile. A name that is not there is refused before anything is read." />
             </StackPanel>
 
+            <!-- The board ids set-state moves. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        IsVisible="{Binding BoardPlan.NeedsIds}">
+                <TextBlock Text="Work item ids" Classes="fieldLabel" />
+                <TextBox Classes="field" Text="{Binding BoardPlan.WorkItemIds, Mode=TwoWay}"
+                         PlaceholderText="1234, 1235" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="The board numbers, in any mix of commas, spaces and newlines. An id the board does not hold is reported as a note, not an error." />
+            </StackPanel>
+
+            <!-- The target state set-state moves items to. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        IsVisible="{Binding BoardPlan.SelectedCommand.SupportsTargetState}">
+                <TextBlock Text="Target state" Classes="fieldLabel" />
+                <TextBox Classes="field" Text="{Binding BoardPlan.TargetState, Mode=TwoWay}"
+                         PlaceholderText="Done" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="Leave blank to use the profile's terminal state (states.done). An exact state name, as the board spells it." />
+            </StackPanel>
+
+            <!-- The repositories advance probes for commit evidence. -->
+            <StackPanel Spacing="{StaticResource SpacingXS}"
+                        IsVisible="{Binding BoardPlan.NeedsRepos}">
+                <TextBlock Text="Repositories" Classes="fieldLabel" />
+                <TextBox Classes="field" Text="{Binding BoardPlan.RepoPaths, Mode=TwoWay}"
+                         PlaceholderText="/path/to/repo-one, /path/to/repo-two" />
+                <TextBlock Classes="caption" TextWrapping="Wrap"
+                           Text="Local repository paths, comma- or newline-separated. A branch whose name carries an Issue code and holds commits beyond the base ref is the evidence." />
+                <TextBox Classes="field" Text="{Binding BoardPlan.BaseRef, Mode=TwoWay}" />
+                <CheckBox Content="Fetch before probing — uncheck to skip, but stale refs hide real work"
+                          IsChecked="{Binding BoardPlan.Fetch, Mode=TwoWay}" />
+            </StackPanel>
+
             <!-- Per-command options. Each is shown only for the commands that read it. -->
             <StackPanel Spacing="{StaticResource SpacingXS}"
                         IsVisible="{Binding BoardPlan.HasOptions}">
@@ -70,6 +103,12 @@
                 <CheckBox Content="Copy the Done parent's assignee onto items it closes that have none"
                           IsVisible="{Binding BoardPlan.SelectedCommand.SupportsAssignFromParent}"
                           IsChecked="{Binding BoardPlan.AssignFromParent, Mode=TwoWay}" />
+                <CheckBox Content="On a failed sprint write, reset that item's iteration path to the project root"
+                          IsVisible="{Binding BoardPlan.SelectedCommand.SupportsResetOnMissing}"
+                          IsChecked="{Binding BoardPlan.ResetOnMissing, Mode=TwoWay}" />
+                <CheckBox Content="Do not tick a leading '[ ]' title checkbox on the way to Done"
+                          IsVisible="{Binding BoardPlan.SelectedCommand.SupportsNoTick}"
+                          IsChecked="{Binding BoardPlan.NoTick, Mode=TwoWay}" />
             </StackPanel>
 
             <!-- Credential -->
@@ -222,6 +261,9 @@
                                         <StackPanel Grid.Column="3" Orientation="Horizontal"
                                                     Spacing="{StaticResource SpacingChip}"
                                                     VerticalAlignment="Center">
+                                            <TextBlock Classes="caption" Text="{Binding Detail}"
+                                                       ToolTip.Tip="{Binding Detail}"
+                                                       IsVisible="{Binding Detail, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
                                             <TextBlock Classes="caption" Text="{Binding ChangeSummary}" />
                                             <TextBlock Classes="caption" Text="{Binding BoardReference}" />
                                         </StackPanel>
