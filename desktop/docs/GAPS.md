@@ -24,7 +24,6 @@ complete register (`71e18c7~1`) plus the six rows that commit itself closed.
 
 ## Closed
 
-
 | Gap | Severity | Closed by |
 | --- | --- | --- |
 | `ac05-ac07-not-on-any-issue` — PRD-AC-05 and PRD-AC-07 are assigned to ABSD-302 in TRACEABILITY but issue #14 names only AC-04 | low | 2026-09-18 reconcile (commit 71e18c7): the issue bodies were updated to name the criteria TRACEABILITY assigns, and the Project Requirement field was populated from them. |
