@@ -236,7 +236,7 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 | `dedup` | Delete duplicate work items (same code, or same title under one parent) |
 | `check-html` | Read-only, offline check that every description converts to valid HTML; exit 1 on malformed markup. Needs no PAT and no network |
 | `audit` | Read-only check that the board matches the backlog **and that its states agree with its hierarchy**; exit 1 on drift |
-| `sync` | `gen-csv → check-html → import → resync → resync-tasks → audit`. Aborts before the first write if any description is malformed |
+| `sync` | `gen-csv → check-html → import → resync → resync-tasks → audit`. Aborts before the first write if any description is malformed; exit 1 if any write step or the audit fails |
 | `sprints` | Create the configured iterations and assign Issues (+ child Tasks) to them |
 | `sync-one CODE --sprint NAME --go` | Create or update one Issue and its iteration only; it never changes Tasks or assignees |
 | `assign` | Set each Issue's (and child Tasks') assignee from the `assignees` config |
@@ -250,7 +250,7 @@ PYTHONPATH=src python3 -m ado_board_sync <command>    # or as a module, no insta
 reconcile, whereas closing items or setting owners changes workflow/ownership metadata, so each
 must be run explicitly.
 
-One consequence: `sync` returns the exit code of `audit`, and `audit` fails when a done parent
+One consequence: `sync` fails when `audit` does, and `audit` fails when a done parent
 still has open descendants. So `sync` reports state drift but never repairs it — it exits 1 until
 you clear the drift with `close-children --go`. That is deliberate. Closing someone's work item is
 a decision, not a reconcile, so the tool surfaces it and waits.
@@ -268,6 +268,22 @@ already exist), `--no-tasks` (assign Issues only, don't cascade to Tasks), and
 `assign` accepts `--no-tasks` (set the Issue owner only, don't cascade to child
 Tasks) and `--only-unassigned` (fill an owner only where none is set; never
 overwrite a deliberate assignment).
+
+### Exit codes
+
+Every command exits `0` on success and `1` on failure, so a CI step can gate on the exit code
+alone. With `--go`, a write command (`import`, `resync`, `resync-tasks`, `close-children`,
+`dedup`, `sprints`, `assign`, `set-state`, `sync-one`, `advance`) exits `1` if **any** Azure DevOps
+write it attempted was rejected. A rejected write is printed as a `FAIL` line and the command
+carries on with the rest of its plan rather than stopping part-way, so one bad item never
+strands the others; re-running after the cause is fixed picks up only what is still missing.
+For `sprints` that includes creating an iteration node or adding it to the team.
+
+`sync` runs every step even when one reports a failed write, so the board converges as far as it
+can and `audit` still prints its findings. It then exits with the first non-zero code among
+`import`, `resync`, `resync-tasks`, and `audit` — a failed write fails the run even when the
+audit that follows passes. A dry run (no `--go`) writes nothing, so only malformed markup (`check-html`)
+or a failing `audit` can make it exit `1`.
 
 ### Typical flow
 

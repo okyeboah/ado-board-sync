@@ -21,6 +21,21 @@ class FakeClient:
         # pin down that a command's request count stays flat as the number of Issues grows,
         # instead of scaling with it (the N+1 pattern that made large boards feel slow).
         self.call_counts = Counter()
+        self._failures = {}      # "create"/"patch"/"delete" -> (match, status); see fail_writes
+
+    # --- failure injection -------------------------------------------------
+    def fail_writes(self, method, match=lambda *args: True, status=500):
+        """Make ``method`` ("create", "patch" or "delete") reject every call whose
+        arguments ``match`` accepts: it returns ``status`` and writes nothing, the
+        way Azure DevOps answers a write it refuses."""
+        self._failures[method] = (match, status)
+
+    def _rejected(self, method, *args):
+        """The (status, body) to return if an injected failure covers this call, else None."""
+        rule = self._failures.get(method)
+        if rule and rule[0](*args):
+            return rule[1], {"message": f"injected {method} failure"}
+        return None
 
     # --- seeding helpers ---------------------------------------------------
     def add_item(self, wtype, title, desc="", parent=None, state=None, assigned_to=None):
@@ -87,6 +102,9 @@ class FakeClient:
         return 200, {"id": wid, "fields": dict(it["fields"]), "relations": list(it["relations"])}
 
     def create(self, wtype, ops):
+        rejected = self._rejected("create", wtype, ops)
+        if rejected:
+            return rejected
         wid = self._new_id()
         self.items[wid] = {
             "fields": {"System.WorkItemType": wtype},
@@ -108,12 +126,18 @@ class FakeClient:
         return 201, {"id": wid}
 
     def patch(self, wid, ops) -> tuple:
+        rejected = self._rejected("patch", wid, ops)
+        if rejected:
+            return rejected
         for op in ops:
             if op["path"].startswith("/fields/"):
                 self.items[wid]["fields"][op["path"][len("/fields/"):]] = op["value"]
         return 200, {}
 
     def delete(self, wid):
+        rejected = self._rejected("delete", wid)
+        if rejected:
+            return rejected
         self.items.pop(wid, None)
         for it in self.items.values():
             it["relations"] = [
