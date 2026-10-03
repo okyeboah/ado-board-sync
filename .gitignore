@@ -87,3 +87,6 @@ CLAUDE.md
 # it is a recovery copy, not source.
 *.bak-guards
 # agent-brain:repo:end
+
+# Machine-local .mcp.json backups left by the stele-rs cutover.
+.mcp.json.bak*
