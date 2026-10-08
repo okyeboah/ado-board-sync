@@ -5,6 +5,8 @@ covers each command's own logic in depth; this file targets the *composition* in
 abort-before-any-write behavior on malformed markup, and multi-run convergence -- none of which
 is exercised anywhere else, since cli.main() always builds a real network Client on its own.
 """
+import contextlib
+import io
 import os
 import tempfile
 import unittest
@@ -99,6 +101,40 @@ class SyncOrchestrationTest(unittest.TestCase):
 
         self.assertEqual(exit_code, 1)
         self.assertEqual(len(self.fake_client.items), 0)
+
+    # --- failed writes ---------------------------------------------------------
+    def _fail_creates_for(self, prefix):
+        """Once the FakeClient exists, reject every create whose title starts with ``prefix``."""
+        def _build_failing(cfg, _pat):
+            self.fake_client = FakeClient(cfg)
+            self.fake_client.fail_writes(
+                "create", lambda wtype, ops: ops[0]["value"].startswith(prefix))
+            return self.fake_client
+        client_patcher = patch("ado_board_sync.cli.client_mod.Client", side_effect=_build_failing)
+        client_patcher.start()
+        self.addCleanup(client_patcher.stop)
+
+    def test_sync_propagates_a_failed_write_even_when_audit_passes(self):
+        # Audit is stubbed to pass so the only thing that can fail the run is the
+        # write step: before, `sync` returned audit's exit code and a failed write
+        # surfaced only as a FAIL line in the log.
+        self._fail_creates_for("PROJ-102")
+        with patch("ado_board_sync.commands.audit", return_value=0) as audit:
+            with contextlib.redirect_stdout(io.StringIO()):
+                exit_code = self._run("sync", "--go")
+
+        self.assertEqual(exit_code, 1)
+        audit.assert_called_once()   # the chain still ran to the end
+
+    def test_sync_keeps_running_later_steps_after_a_failed_write(self):
+        self._fail_creates_for("PROJ-102")
+        with contextlib.redirect_stdout(io.StringIO()):
+            exit_code = self._run("sync", "--go")
+
+        self.assertEqual(exit_code, 1)
+        # import carried on past the rejected Issue, and resync-tasks still ran after it.
+        self.assertTrue(any(t.startswith("PROJ-101") for t in self._titles("Issue")))
+        self.assertEqual(len(self._titles("Task")), 2)
 
     # --- dry run ---------------------------------------------------------------
     def test_sync_dry_run_writes_nothing(self):

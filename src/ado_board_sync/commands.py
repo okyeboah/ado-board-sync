@@ -211,9 +211,11 @@ def import_items(cfg, client, args):
         print("\n(dry-run; pass --go to create)")
         return 0
 
+    # A failed create is reported and the run carries on with the rest of the
+    # plan; the exit code, not the log, is what tells a caller it went wrong.
     print("\nCreating...")
     created_epic_ids = {}  # epic title -> new id
-    created = 0
+    created = failed = 0
     for kind, title, desc, parent in plan:
         if kind == "epic":
             eid = _create(client, cfg.types["epic"], title, desc)
@@ -221,18 +223,30 @@ def import_items(cfg, client, args):
                 created_epic_ids[title] = eid
                 created += 1
                 print(f"  Epic #{eid}: {title}")
+            else:
+                failed += 1
         else:
             parent_id = None
             if parent:
                 ptype, pval = parent
                 parent_id = pval if ptype == "id" else created_epic_ids.get(pval)
+                if parent_id is None:
+                    # Its Epic's create failed above. Creating the Issue anyway would
+                    # leave it unparented for good: a re-run sees the Issue as existing
+                    # and never links it. Skip it so the re-run creates both, in order.
+                    failed += 1
+                    print(f"  FAIL create {cfg.types['story']} '{title}': "
+                          f"parent {cfg.types['epic']} '{pval}' was not created")
+                    continue
             iid = _create(client, cfg.types["story"], title, desc, parent=parent_id)
             if iid:
                 created += 1
                 print(f"  Issue #{iid}: {title} (parent {parent_id})")
+            else:
+                failed += 1
 
-    print(f"\nDone. Created {created} item(s).")
-    return 0
+    print(f"\nDone. Created {created} item(s)" + (f", {failed} failed." if failed else "."))
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -293,10 +307,13 @@ def resync(cfg, client, args):
 
     print("\nApplying...")
     jobs = [lambda wid=wid, ops=ops: client.patch(wid, ops) for wid, _title, ops in updates]
+    failed = 0
     for (wid, _title, _ops), (st, _r) in zip(updates, _apply(jobs)):
+        if st != 200:
+            failed += 1
         print(f"  #{wid} -> {'OK' if st == 200 else f'FAIL {st}'}")
-    print("\nResync finished.")
-    return 0
+    print("\nResync finished." + (f" {failed} update(s) failed." if failed else ""))
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -459,14 +476,19 @@ def resync_tasks(cfg, client, args):
         return client.delete(target)
 
     print("\nApplying...")
+    failed = 0
     for action, (st, r) in zip(actions, _apply([lambda a=a: _do(a) for a in actions])):
         kind, code, target = action[0], action[1], action[2]
+        ok = st in ((200, 201) if kind == "add" else (200, 204))
+        if not ok:
+            failed += 1
         if kind == "add":
-            print(f"  {code} + {'OK' if st in (200, 201) else f'FAIL {st} {r}'}")
+            print(f"  {code} + {'OK' if ok else f'FAIL {st} {r}'}")
         else:
-            print(f"  {code} - #{target} {'OK' if st in (200, 204) else f'FAIL {st}'}")
-    print(f"\nDONE: +{tot_add} tasks, -{tot_del} tasks")
-    return 0
+            print(f"  {code} - #{target} {'OK' if ok else f'FAIL {st}'}")
+    print(f"\nDONE: +{tot_add} tasks, -{tot_del} tasks"
+          + (f"; {failed} write(s) failed" if failed else ""))
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -616,10 +638,13 @@ def close_children(cfg, client, args):
         for items in ordered.values() for wid, _title, assignee in items
     ]
     flat = [(wid, assignee) for items in ordered.values() for wid, _t, assignee in items]
+    failed = 0
     for (wid, _a), (st, r) in zip(flat, _apply(jobs)):
+        if st != 200:
+            failed += 1
         print(f"  #{wid} -> {done}: {'OK' if st == 200 else f'FAIL {st} {r}'}")
-    print(f"\nDONE: closed {total} item(s)")
-    return 0
+    print(f"\nDONE: closed {total - failed} item(s)" + (f", {failed} failed" if failed else ""))
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------------------- #
@@ -794,12 +819,15 @@ def sprints(cfg, client, args):
         print("\n(dry-run; pass --go to create sprints and assign work items)")
         return 0
 
+    node_fail = 0  # iteration-node creates and team additions that failed
     if not assign_only:
         print("\nCreating / updating iteration nodes...")
         idents = {}
         for name, start, finish, _ in plan:
             ok, ident, note = client.ensure_iteration(name, start, finish)
             print(f"  {name}: {note if ok else 'FAIL ' + note}")
+            if not ok:
+                node_fail += 1
             if ok and ident:
                 idents[name] = ident
         team = cfg.team or client.default_team()
@@ -808,6 +836,8 @@ def sprints(cfg, client, args):
             for name, ident in idents.items():
                 ok, note = client.add_team_iteration(team, ident)
                 print(f"  {name}: {note if ok else 'FAIL ' + note}")
+                if not ok:
+                    node_fail += 1
         elif not team:
             print("\n(no team resolved; sprints created but not added to a team's sprint view)")
 
@@ -856,10 +886,12 @@ def sprints(cfg, client, args):
                 _reset_iteration(wid, f"task #{wid}", "      ")
 
     print("\n" + "-" * 60)
+    if node_fail:
+        print(f"Sprint nodes   : {node_fail} fail")
     print(f"Issues assigned: {ok} ok, {fail} fail")
     if do_tasks:
         print(f"Tasks  assigned: {task_ok} ok, {task_fail} fail")
-    return 0 if (fail == 0 and task_fail == 0) else 1
+    return 0 if (fail == 0 and task_fail == 0 and node_fail == 0) else 1
 
 
 # --------------------------------------------------------------------------- #
@@ -1097,10 +1129,13 @@ def dedup(cfg, client, args):
 
     print("\nDeleting...")
     results = _apply([lambda wid=wid: client.delete(wid) for wid in to_delete])
+    failed = 0
     for wid, (st, _) in zip(to_delete, results):
+        if st not in (200, 204):
+            failed += 1
         print(f"  delete #{wid} -> {'OK' if st in (200, 204) else f'FAIL {st}'}")
-    print("\nCleanup finished.")
-    return 0
+    print("\nCleanup finished." + (f" {failed} delete(s) failed." if failed else ""))
+    return 1 if failed else 0
 
 
 # --------------------------------------------------------------------------- #

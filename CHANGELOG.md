@@ -48,6 +48,17 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
 
 ### Changed
 
+- Write commands now exit `1` when any Azure DevOps write they attempted fails.
+  `import`, `resync`, `resync-tasks`, `close-children`, and `dedup` printed a
+  `FAIL` line for a rejected create, update, or delete and still exited `0`,
+  and `sprints` did the same for an iteration node it could not create or add
+  to the team, so a pipeline could only detect a failed write by grepping the
+  log. Each command still applies the rest of its plan after a failure; only
+  the exit code changes. `sync` now exits with the first non-zero code among
+  its write steps and `audit` instead of always returning `audit`'s, so a
+  failed write fails the run even when the audit afterwards passes. Callers
+  that grep `sync` output for `FAIL` can rely on the exit code instead. The
+  `FAIL` lines themselves are unchanged.
 - The desktop application's assignee plan now shows an already-correctly-owned
   item as **Unchanged** instead of omitting it. A plan listing two of the five
   codes you configured was indistinguishable from one that had lost the other
@@ -80,6 +91,11 @@ All notable changes to `ado-board-sync`. Versions follow [semantic versioning](h
 
 ### Fixed
 
+- `import` created an Issue with no parent when its Epic's create failed in
+  the same run, and a re-run never repaired it: the Issue already existed, so
+  it was skipped while the Epic was created beside it. The Issue is now left
+  for the re-run too, reported as a `FAIL create` line and counted in the exit
+  code, so the next run creates the Epic and links the Issue under it.
 - The desktop application recorded no operation history at all in the running
   app. The shell built its own Plan gate rather than resolving the one the
   composition root had configured, so the history recorder and the diagnostics

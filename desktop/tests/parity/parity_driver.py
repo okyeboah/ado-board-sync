@@ -131,10 +131,13 @@ def _sync_chain(cfg, client, args):
     commands.gen_csv(cfg, args, items=items)
     if commands.check_html(cfg, args, items=items):
         return 1
-    commands.import_items(cfg, client, args)
-    commands.resync(cfg, client, args)
-    commands.resync_tasks(cfg, client, args)
-    return commands.audit(cfg, client, args)
+    step_codes = [
+        commands.import_items(cfg, client, args),
+        commands.resync(cfg, client, args),
+        commands.resync_tasks(cfg, client, args),
+        commands.audit(cfg, client, args),
+    ]
+    return next((code for code in step_codes if code), 0)
 
 
 def main():
