@@ -142,10 +142,16 @@ def main(argv=None):
         if commands.check_html(cfg, args, items=items):
             print("\nAborted: fix the description markup before writing to the board.")
             return 1
-        commands.import_items(cfg, client, args)
-        commands.resync(cfg, client, args)
-        commands.resync_tasks(cfg, client, args)
-        return commands.audit(cfg, client, args)
+        # Every step runs even after one reports a failed write, so the board
+        # converges as far as it can and audit still prints its findings; the
+        # first failing step's exit code wins, write steps before audit.
+        step_codes = [
+            commands.import_items(cfg, client, args),
+            commands.resync(cfg, client, args),
+            commands.resync_tasks(cfg, client, args),
+            commands.audit(cfg, client, args),
+        ]
+        return next((code for code in step_codes if code), 0)
     if args.cmd == "sync-one":
         return commands.sync_one(cfg, client, args)
     if args.cmd == "set-state":

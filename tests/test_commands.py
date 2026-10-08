@@ -668,6 +668,180 @@ class CommandsTest(unittest.TestCase):
         )
         self.assertEqual(commands.audit(self.cfg, self.client), 1)
 
+    # --- failed writes: exit code ------------------------------------------
+    # Every write command reports a rejected write as a FAIL line, keeps applying
+    # the rest of its plan, and exits 1 -- so a pipeline can trust the exit code
+    # instead of grepping the log for FAIL.
+    def _run_quietly(self, command, cfg=None, **args):
+        with contextlib.redirect_stdout(io.StringIO()):
+            return command(cfg or self.cfg, self.client, Args(go=True, **args))
+
+    def _seed_board_needing_tasks(self):
+        """Epics and Issues matching the backlog, with no Tasks yet."""
+        self._run_quietly(commands.import_items)
+        return self._issue_id_by_code("PROJ-101")
+
+    def test_import_returns_0_when_every_create_succeeds(self):
+        self.assertEqual(self._run_quietly(commands.import_items), 0)
+
+    def test_import_returns_1_on_a_failed_create_and_still_creates_the_rest(self):
+        self.client.fail_writes(
+            "create", lambda wtype, ops: ops[0]["value"].startswith("PROJ-102"))
+
+        self.assertEqual(self._run_quietly(commands.import_items), 1)
+
+        self.assertEqual(len(self._titles_of_type("Epic")), 2)
+        issue_titles = self._titles_of_type("Issue")
+        self.assertEqual(len(issue_titles), 2)
+        self.assertFalse(any(t.startswith("PROJ-102") for t in issue_titles))
+
+    def test_import_prints_a_fail_line_for_the_failed_create(self):
+        self.client.fail_writes("create", lambda wtype, ops: wtype == "Epic")
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            commands.import_items(self.cfg, self.client, Args(go=True))
+        self.assertIn("FAIL create Epic", out.getvalue())
+
+    def test_import_skips_the_issues_of_an_epic_whose_create_failed(self):
+        # Creating them unparented would strand them: the next run sees the
+        # Issues as existing and never links them under the Epic it creates.
+        self.client.fail_writes(
+            "create", lambda wtype, ops: ops[0]["value"] == "Epic 2 — Delivery")
+
+        self.assertEqual(self._run_quietly(commands.import_items), 1)
+        self.assertFalse(any(t.startswith("PROJ-201") for t in self._titles_of_type("Issue")))
+
+        # Once the cause is gone, a re-run creates the Epic and links its Issue under it.
+        self.client.fail_writes("create", lambda *args: False)
+        self.assertEqual(self._run_quietly(commands.import_items), 0)
+        epic_2 = next(wid for wid, it in self.client.items.items()
+                      if it["fields"]["System.Title"] == "Epic 2 — Delivery")
+        self.assertEqual(
+            self.client.items[self._issue_id_by_code("PROJ-201")]["fields"]["System.Parent"], epic_2)
+
+    def _seed_stale_issues(self):
+        epic = self.client.add_item("Epic", "Epic 1 — Platform Foundations", desc="stale")
+        first = self.client.add_item("Issue", "PROJ-101 · OLD", desc="old", parent=epic)
+        second = self.client.add_item("Issue", "PROJ-102 · OLD", desc="old", parent=epic)
+        return first, second
+
+    def test_resync_returns_0_when_every_update_succeeds(self):
+        self._seed_stale_issues()
+        self.assertEqual(self._run_quietly(commands.resync), 0)
+
+    def test_resync_returns_1_on_a_failed_update_and_still_applies_the_rest(self):
+        first, second = self._seed_stale_issues()
+        self.client.fail_writes("patch", lambda wid, ops: wid == first)
+
+        self.assertEqual(self._run_quietly(commands.resync), 1)
+
+        self.assertEqual(self.client.items[first]["fields"]["System.Title"], "PROJ-101 · OLD")
+        self.assertEqual(
+            self.client.items[second]["fields"]["System.Title"],
+            "PROJ-102 · Wire up local orchestration",
+        )
+
+    def test_resync_tasks_returns_0_when_every_write_succeeds(self):
+        issue = self._seed_board_needing_tasks()
+        self.client.add_item("Task", "Stale task to remove", parent=issue)
+        self.assertEqual(self._run_quietly(commands.resync_tasks), 0)
+
+    def test_resync_tasks_returns_1_on_a_failed_create_and_still_applies_the_rest(self):
+        issue = self._seed_board_needing_tasks()
+        self.client.fail_writes("create", lambda wtype, ops: ops[0]["value"] == "Expose /health")
+
+        self.assertEqual(self._run_quietly(commands.resync_tasks), 1)
+
+        self.assertEqual(len(self._children(issue)), 2)   # PROJ-101's Tasks still created
+        self.assertNotIn("Expose /health", self._titles_of_type("Task"))
+
+    def test_resync_tasks_returns_1_on_a_failed_delete_and_still_applies_the_rest(self):
+        issue = self._seed_board_needing_tasks()
+        stale = self.client.add_item("Task", "Stale task to remove", parent=issue)
+        self.client.fail_writes("delete", lambda wid: wid == stale)
+
+        self.assertEqual(self._run_quietly(commands.resync_tasks), 1)
+
+        self.assertIn(stale, self.client.items)
+        self.assertEqual(len(self._titles_of_type("Task")), 4)   # 3 bullets added + the stale one
+
+    def test_close_children_returns_0_when_every_close_succeeds(self):
+        self._seed_issue_with_tasks("Done", ["Doing", "To Do"])
+        self.assertEqual(self._run_quietly(commands.close_children), 0)
+
+    def test_close_children_returns_1_on_a_failed_close_and_still_closes_the_rest(self):
+        _, (blocked, closable) = self._seed_issue_with_tasks("Done", ["Doing", "To Do"])
+        self.client.fail_writes("patch", lambda wid, ops: wid == blocked)
+
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            rc = commands.close_children(self.cfg, self.client, Args(go=True))
+
+        self.assertEqual(rc, 1)
+        self.assertEqual(self.client.items[blocked]["fields"]["System.State"], "Doing")
+        self.assertEqual(self.client.items[closable]["fields"]["System.State"], "Done")
+        self.assertIn("DONE: closed 1 item(s), 1 failed", out.getvalue())
+
+    def _seed_duplicate_issues(self):
+        epic = self.client.add_item("Epic", "Epic 1 — Platform Foundations")
+        self.client.add_item("Issue", "PROJ-101 · Build the core event store", parent=epic)
+        dup_101 = self.client.add_item("Issue", "PROJ-101 · duplicate", parent=epic)
+        self.client.add_item("Issue", "PROJ-102 · Wire up local orchestration", parent=epic)
+        dup_102 = self.client.add_item("Issue", "PROJ-102 · duplicate", parent=epic)
+        return dup_101, dup_102
+
+    def test_dedup_returns_0_when_every_delete_succeeds(self):
+        self._seed_duplicate_issues()
+        self.assertEqual(self._run_quietly(commands.dedup), 0)
+
+    def test_dedup_returns_1_on_a_failed_delete_and_still_deletes_the_rest(self):
+        dup_101, dup_102 = self._seed_duplicate_issues()
+        self.client.fail_writes("delete", lambda wid: wid == dup_101)
+
+        self.assertEqual(self._run_quietly(commands.dedup), 1)
+
+        self.assertIn(dup_101, self.client.items)
+        self.assertNotIn(dup_102, self.client.items)
+
+    def test_sprints_returns_0_when_every_write_succeeds(self):
+        cfg = self._sprint_cfg()
+        self._run_quietly(commands.import_items, cfg)
+        self.assertEqual(self._run_quietly(commands.sprints, cfg), 0)
+
+    def test_sprints_returns_1_when_an_iteration_node_cannot_be_created(self):
+        cfg = self._sprint_cfg()
+        self._run_quietly(commands.import_items, cfg)
+        self.client.ensure_iteration = lambda name, start=None, finish=None: (
+            (False, None, "403 forbidden") if name == "Sprint 2" else (True, f"iter-{name}", "created"))
+
+        self.assertEqual(self._run_quietly(commands.sprints, cfg, assign_only=False), 1)
+
+    def test_sprints_returns_1_when_a_sprint_cannot_be_added_to_the_team(self):
+        cfg = self._sprint_cfg()
+        self._run_quietly(commands.import_items, cfg)
+        self.client.add_team_iteration = lambda team, ident: (False, "403 forbidden")
+
+        self.assertEqual(self._run_quietly(commands.sprints, cfg), 1)
+
+    def test_assign_returns_0_when_every_write_succeeds(self):
+        cfg = self._assign_cfg()
+        self._run_quietly(commands.import_items, cfg)
+        self.assertEqual(self._run_quietly(commands.assign, cfg), 0)
+
+    def test_assign_returns_1_on_a_failed_update_and_still_applies_the_rest(self):
+        cfg = self._assign_cfg()
+        self._run_quietly(commands.import_items, cfg)
+        blocked = self._issue_id_by_code("PROJ-101")
+        self.client.fail_writes("patch", lambda wid, ops: wid == blocked)
+
+        self.assertEqual(self._run_quietly(commands.assign, cfg), 1)
+
+        self.assertNotIn("System.AssignedTo", self.client.items[blocked]["fields"])
+        self.assertEqual(
+            self.client.items[self._issue_id_by_code("PROJ-201")]["fields"]["System.AssignedTo"],
+            "bob@example.com",
+        )
+
 
 class SetStateTest(unittest.TestCase):
     """set-state works from explicit ids only, so it needs no backlog fixture."""
